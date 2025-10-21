@@ -151,10 +151,28 @@ export default function Contacts() {
 
   // Funções para mapeamento de campos
   const handleFieldMappingChange = (columnIndex: number, systemField: string) => {
-    setFieldMapping(prev => ({
-      ...prev,
-      [columnIndex]: systemField
-    }));
+    setFieldMapping(prev => {
+      const newMapping = { ...prev };
+      
+      // Se o campo não é "none", verificar se já existe
+      if (systemField !== 'none') {
+        // Remover o mapeamento anterior deste campo se existir
+        Object.keys(newMapping).forEach(key => {
+          if (newMapping[key] === systemField && key !== columnIndex.toString()) {
+            delete newMapping[key];
+          }
+        });
+      }
+      
+      // Atualizar o mapeamento
+      if (systemField === 'none') {
+        delete newMapping[columnIndex];
+      } else {
+        newMapping[columnIndex] = systemField;
+      }
+      
+      return newMapping;
+    });
   };
 
   const processMappedData = async () => {
@@ -306,28 +324,48 @@ export default function Contacts() {
   const handleDeleteSelected = async () => {
     const contactIds = Array.from(selectedContacts);
     
-    const { error } = await supabase
-      .from('contacts')
-      .delete()
-      .in('id', contactIds);
-    
-    if (error) {
-      console.error('Erro ao excluir contatos:', error);
+    try {
+      // Processar em lotes de 100 para evitar timeout
+      const batchSize = 100;
+      let deletedCount = 0;
+      
+      for (let i = 0; i < contactIds.length; i += batchSize) {
+        const batch = contactIds.slice(i, i + batchSize);
+        
+        const { error } = await supabase
+          .from('contacts')
+          .delete()
+          .in('id', batch);
+        
+        if (error) {
+          console.error('Erro ao excluir lote de contatos:', error);
+          toast({
+            title: "Erro",
+            description: `Erro ao excluir contatos. ${deletedCount} foram excluídos antes do erro.`,
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        deletedCount += batch.length;
+      }
+      
+      setSelectedContacts(new Set());
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      
+      toast({
+        title: "Sucesso!",
+        description: `${deletedCount} contatos excluídos com sucesso.`,
+      });
+      
+    } catch (error) {
+      console.error('Erro geral ao excluir contatos:', error);
       toast({
         title: "Erro",
-        description: "Erro ao excluir contatos.",
+        description: "Erro inesperado ao excluir contatos.",
         variant: "destructive",
       });
-      return;
     }
-    
-    setSelectedContacts(new Set());
-    queryClient.invalidateQueries({ queryKey: ["contacts"] });
-    
-    toast({
-      title: "Sucesso!",
-      description: `${contactIds.length} contatos excluídos com sucesso.`,
-    });
   };
 
   // Função para adicionar novo contato
@@ -420,11 +458,21 @@ export default function Contacts() {
         // Mapeamento automático baseado nos cabeçalhos
         const autoMapping: { [key: string]: string } = {};
         
+        let phoneCount = 0;
         firstRow.forEach((header, index) => {
           if (header.includes('nome') || header.includes('name')) {
             autoMapping[index] = 'name';
           } else if (header.includes('telefone') || header.includes('phone') || header.includes('celular')) {
-            autoMapping[index] = 'phone';
+            if (phoneCount === 0) {
+              autoMapping[index] = 'phone';
+              phoneCount++;
+            } else if (phoneCount === 1) {
+              autoMapping[index] = 'phone2';
+              phoneCount++;
+            } else if (phoneCount === 2) {
+              autoMapping[index] = 'phone3';
+              phoneCount++;
+            }
           } else if (header.includes('email') || header.includes('e-mail')) {
             autoMapping[index] = 'email';
           } else if (header.includes('tag') || header.includes('etiqueta') || header.includes('categoria')) {
@@ -514,12 +562,22 @@ export default function Contacts() {
             // Mapeamento automático baseado nos nomes das colunas
             const autoMapping: { [key: string]: string } = {};
             
+            let phoneCount = 0;
             headers.forEach(header => {
               const headerLower = header.toLowerCase();
               if (headerLower.includes('nome') || headerLower.includes('name')) {
                 autoMapping[header] = 'name';
               } else if (headerLower.includes('telefone') || headerLower.includes('phone') || headerLower.includes('celular')) {
-                autoMapping[header] = 'phone';
+                if (phoneCount === 0) {
+                  autoMapping[header] = 'phone';
+                  phoneCount++;
+                } else if (phoneCount === 1) {
+                  autoMapping[header] = 'phone2';
+                  phoneCount++;
+                } else if (phoneCount === 2) {
+                  autoMapping[header] = 'phone3';
+                  phoneCount++;
+                }
               } else if (headerLower.includes('email') || headerLower.includes('e-mail')) {
                 autoMapping[header] = 'email';
               } else if (headerLower.includes('tag') || headerLower.includes('etiqueta') || headerLower.includes('categoria')) {
@@ -881,6 +939,8 @@ export default function Contacts() {
                             <SelectItem value="none">-- Não mapear --</SelectItem>
                             <SelectItem value="name">Nome</SelectItem>
                             <SelectItem value="phone">Telefone</SelectItem>
+                            <SelectItem value="phone2">Telefone 2</SelectItem>
+                            <SelectItem value="phone3">Telefone 3</SelectItem>
                             <SelectItem value="email">E-mail</SelectItem>
                             <SelectItem value="tags">Tags</SelectItem>
                             <SelectItem value="company">Empresa</SelectItem>
