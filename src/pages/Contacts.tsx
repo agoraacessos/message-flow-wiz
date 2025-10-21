@@ -24,6 +24,16 @@ export default function Contacts() {
   const [selectedContacts, setSelectedContacts] = useState<Set<number>>(new Set());
   const [editingContact, setEditingContact] = useState<any>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [newContact, setNewContact] = useState<any>({
+    name: '',
+    phone: '',
+    email: '',
+    tags: [],
+    company: '',
+    position: '',
+    notes: ''
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -198,6 +208,48 @@ export default function Contacts() {
     });
   };
 
+  // Função para adicionar novo contato
+  const handleAddContact = () => {
+    if (!newContact.name || !newContact.phone) {
+      toast({
+        title: "Erro",
+        description: "Nome e telefone são obrigatórios.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const contact = {
+      ...newContact,
+      id: Date.now(),
+      created_at: new Date().toISOString(),
+      tags: typeof newContact.tags === 'string' 
+        ? newContact.tags.split(';').map((t: string) => t.trim()).filter(Boolean)
+        : newContact.tags || []
+    };
+
+    setLocalContacts(prev => [...prev, contact]);
+    queryClient.invalidateQueries({ queryKey: ["contacts"] });
+    
+    // Reset form
+    setNewContact({
+      name: '',
+      phone: '',
+      email: '',
+      tags: [],
+      company: '',
+      position: '',
+      notes: ''
+    });
+    
+    setIsAddDialogOpen(false);
+    
+    toast({
+      title: "Sucesso!",
+      description: "Contato adicionado com sucesso.",
+    });
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -343,6 +395,10 @@ export default function Contacts() {
               Gerencie sua base de contatos para campanhas
             </p>
           </div>
+          <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
+            <UserPlus className="h-4 w-4" />
+            Adicionar Contato
+          </Button>
         </div>
 
         <Tabs defaultValue="list" className="w-full">
@@ -360,35 +416,51 @@ export default function Contacts() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="text-center space-y-4">
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-semibold">Importar Contatos</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Faça upload de um arquivo CSV ou Excel (.xlsx) - o sistema detectará automaticamente o formato
-                    </p>
-                  </div>
-                  
-                  <div className="flex flex-col items-center gap-4">
-                    <Label htmlFor="file-upload" className="cursor-pointer">
-                      <div className="flex h-12 items-center gap-3 rounded-lg bg-primary px-6 text-base font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors">
+                <div className="grid gap-6 md:grid-cols-2">
+                  {/* CSV Upload */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
                         <Upload className="h-5 w-5" />
-                        {uploadMutation.isPending || excelUploadMutation.isPending ? 'Processando...' : 'Selecionar Arquivo'}
-                      </div>
-                      <Input
-                        id="file-upload"
-                        type="file"
-                        accept=".csv,.xlsx,.xls"
-                        className="hidden"
-                        onChange={handleSmartFileUpload}
-                        disabled={uploadMutation.isPending || excelUploadMutation.isPending}
-                      />
-                    </Label>
-                    
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      <p><strong>CSV:</strong> nome,telefone,tag1;tag2;tag3</p>
-                      <p><strong>Excel:</strong> mapeamento automático de campos</p>
-                    </div>
-                  </div>
+                        Importar CSV
+                      </CardTitle>
+                      <CardDescription>
+                        Formato: nome,telefone,tag1;tag2;tag3
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Label htmlFor="csv-upload" className="cursor-pointer">
+                        <div className="flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
+                          <Upload className="h-4 w-4" />
+                          {uploadMutation.isPending ? 'Importando...' : 'Selecionar CSV'}
+                        </div>
+                        <Input
+                          id="csv-upload"
+                          type="file"
+                          accept=".csv"
+                          className="hidden"
+                          onChange={handleFileUpload}
+                          disabled={uploadMutation.isPending}
+                        />
+                      </Label>
+                    </CardContent>
+                  </Card>
+
+                  {/* Excel Upload */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <FileSpreadsheet className="h-5 w-5" />
+                        Importar Excel
+                      </CardTitle>
+                      <CardDescription>
+                        Arquivos .xlsx com mapeamento de campos
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ExcelUpload onDataProcessed={handleExcelDataProcessed} />
+                    </CardContent>
+                  </Card>
                 </div>
               </CardContent>
             </Card>
@@ -571,6 +643,113 @@ export default function Contacts() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Modal de Adicionar Contato */}
+        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Adicionar Novo Contato</DialogTitle>
+              <DialogDescription>
+                Preencha as informações do novo contato.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="add-name">Nome *</Label>
+                <Input
+                  id="add-name"
+                  value={newContact.name}
+                  onChange={(e) => setNewContact({
+                    ...newContact,
+                    name: e.target.value
+                  })}
+                  placeholder="Nome completo"
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-phone">Telefone *</Label>
+                <Input
+                  id="add-phone"
+                  value={newContact.phone}
+                  onChange={(e) => setNewContact({
+                    ...newContact,
+                    phone: e.target.value
+                  })}
+                  placeholder="11999999999"
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-email">E-mail</Label>
+                <Input
+                  id="add-email"
+                  type="email"
+                  value={newContact.email}
+                  onChange={(e) => setNewContact({
+                    ...newContact,
+                    email: e.target.value
+                  })}
+                  placeholder="email@exemplo.com"
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-tags">Tags (separadas por ponto e vírgula)</Label>
+                <Input
+                  id="add-tags"
+                  value={Array.isArray(newContact.tags) ? newContact.tags.join(';') : newContact.tags || ''}
+                  onChange={(e) => setNewContact({
+                    ...newContact,
+                    tags: e.target.value
+                  })}
+                  placeholder="cliente;vip;prospecto"
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-company">Empresa</Label>
+                <Input
+                  id="add-company"
+                  value={newContact.company}
+                  onChange={(e) => setNewContact({
+                    ...newContact,
+                    company: e.target.value
+                  })}
+                  placeholder="Nome da empresa"
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-position">Cargo</Label>
+                <Input
+                  id="add-position"
+                  value={newContact.position}
+                  onChange={(e) => setNewContact({
+                    ...newContact,
+                    position: e.target.value
+                  })}
+                  placeholder="Cargo/posição"
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-notes">Observações</Label>
+                <Input
+                  id="add-notes"
+                  value={newContact.notes}
+                  onChange={(e) => setNewContact({
+                    ...newContact,
+                    notes: e.target.value
+                  })}
+                  placeholder="Observações adicionais"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleAddContact}>
+                Adicionar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Modal de Edição */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
