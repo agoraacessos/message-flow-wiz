@@ -14,7 +14,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { MigrationHelper } from "@/components/MigrationHelper";
 
 export default function FieldSettings() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -282,8 +281,6 @@ export default function FieldSettings() {
           </Button>
         </div>
 
-        {/* Componente de Migração - sempre visível para migrar dados existentes */}
-        <MigrationHelper />
 
         <Card>
           <CardHeader>
