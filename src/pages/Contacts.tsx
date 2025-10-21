@@ -23,32 +23,8 @@ export default function Contacts() {
   const { data: contacts, isLoading } = useQuery({
     queryKey: ["contacts", localContacts],
     queryFn: async () => {
-      // Dados de exemplo + contatos importados
-      const exampleContacts = [
-        {
-          id: 1,
-          name: "João Silva",
-          phone: "11999999999",
-          tags: ["cliente", "vip"],
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 2,
-          name: "Maria Santos",
-          phone: "11888888888",
-          tags: ["prospecto"],
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 3,
-          name: "Pedro Costa",
-          phone: "11777777777",
-          tags: ["cliente"],
-          created_at: new Date().toISOString()
-        }
-      ];
-      
-      return [...exampleContacts, ...localContacts];
+      // Apenas contatos importados (sem dados fake)
+      return localContacts;
     },
   });
 
@@ -323,7 +299,7 @@ export default function Contacts() {
                 ) : (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <UserPlus className="mb-4 h-12 w-12 text-muted-foreground" />
-                    <h3 className="text-lg font-semibold">Nenhum contato encontrado</h3>
+                    <h3 className="text-lg font-semibold">Nenhum contato cadastrado</h3>
                     <p className="mt-2 text-sm text-muted-foreground">
                       Importe um arquivo CSV ou Excel para começar
                     </p>
