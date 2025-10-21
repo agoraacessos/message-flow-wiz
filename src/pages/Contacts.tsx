@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ExcelUpload } from "@/components/ExcelUpload";
+import * as XLSX from 'xlsx';
 
 export default function Contacts() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -204,6 +205,123 @@ export default function Contacts() {
     }
   };
 
+  const handleSmartFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Detectar tipo de arquivo pela extensão
+    const fileName = file.name.toLowerCase();
+    
+    if (fileName.endsWith('.csv')) {
+      // Processar como CSV
+      uploadMutation.mutate(file);
+    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      // Processar como Excel
+      try {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = new Uint8Array(e.target?.result as ArrayBuffer);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            
+            // Converter para JSON
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            if (jsonData.length === 0) {
+              toast({
+                title: "Erro",
+                description: "A planilha está vazia",
+                variant: "destructive",
+              });
+              return;
+            }
+
+            const headers = jsonData[0] as string[];
+            const rows = jsonData.slice(1) as any[][];
+
+            // Mapeamento automático baseado nos nomes das colunas
+            const autoMapping: { [key: string]: string } = {};
+            
+            headers.forEach(header => {
+              const headerLower = header.toLowerCase();
+              if (headerLower.includes('nome') || headerLower.includes('name')) {
+                autoMapping[header] = 'name';
+              } else if (headerLower.includes('telefone') || headerLower.includes('phone') || headerLower.includes('celular')) {
+                autoMapping[header] = 'phone';
+              } else if (headerLower.includes('email') || headerLower.includes('e-mail')) {
+                autoMapping[header] = 'email';
+              } else if (headerLower.includes('tag') || headerLower.includes('etiqueta') || headerLower.includes('categoria')) {
+                autoMapping[header] = 'tags';
+              } else if (headerLower.includes('empresa') || headerLower.includes('company')) {
+                autoMapping[header] = 'company';
+              } else if (headerLower.includes('cargo') || headerLower.includes('position')) {
+                autoMapping[header] = 'position';
+              } else if (headerLower.includes('observação') || headerLower.includes('note') || headerLower.includes('comentário')) {
+                autoMapping[header] = 'notes';
+              }
+            });
+
+            // Processar dados com mapeamento automático
+            const processedData = rows.map((row, index) => {
+              const contact: any = {
+                id: Date.now() + index,
+                created_at: new Date().toISOString()
+              };
+              
+              Object.entries(autoMapping).forEach(([excelColumn, systemField]) => {
+                const columnIndex = headers.indexOf(excelColumn);
+                if (columnIndex !== -1 && row[columnIndex] !== undefined) {
+                  if (systemField === 'tags') {
+                    contact[systemField] = typeof row[columnIndex] === 'string' 
+                      ? row[columnIndex].split(';').map((t: string) => t.trim()).filter(Boolean)
+                      : [];
+                  } else {
+                    contact[systemField] = row[columnIndex];
+                  }
+                }
+              });
+
+              return contact;
+            }).filter(contact => contact.name && contact.phone);
+
+            // Salvar os contatos
+            setLocalContacts(prev => [...prev, ...processedData]);
+            queryClient.invalidateQueries({ queryKey: ["contacts"] });
+            
+            toast({
+              title: "Sucesso!",
+              description: `${processedData.length} contatos importados do Excel com sucesso.`,
+            });
+
+          } catch (err) {
+            console.error('Erro ao processar Excel:', err);
+            toast({
+              title: "Erro",
+              description: "Erro ao processar a planilha Excel. Verifique se o arquivo está correto.",
+              variant: "destructive",
+            });
+          }
+        };
+
+        reader.readAsArrayBuffer(file);
+      } catch (error) {
+        toast({
+          title: "Erro",
+          description: "Erro ao ler o arquivo Excel.",
+          variant: "destructive",
+        });
+      }
+    } else {
+      toast({
+        title: "Erro",
+        description: "Formato de arquivo não suportado. Use CSV ou Excel (.xlsx/.xls).",
+        variant: "destructive",
+      });
+    }
+  };
+
   const allTags = Array.from(
     new Set(contacts?.flatMap((c) => c.tags || []))
   ).filter(Boolean);
@@ -242,51 +360,35 @@ export default function Contacts() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid gap-6 md:grid-cols-2">
-                  {/* CSV Upload */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
+                <div className="text-center space-y-4">
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold">Importar Contatos</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Faça upload de um arquivo CSV ou Excel (.xlsx) - o sistema detectará automaticamente o formato
+                    </p>
+                  </div>
+                  
+                  <div className="flex flex-col items-center gap-4">
+                    <Label htmlFor="file-upload" className="cursor-pointer">
+                      <div className="flex h-12 items-center gap-3 rounded-lg bg-primary px-6 text-base font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors">
                         <Upload className="h-5 w-5" />
-                        Importar CSV
-                      </CardTitle>
-                      <CardDescription>
-                        Formato: nome,telefone,tag1;tag2;tag3
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Label htmlFor="csv-upload" className="cursor-pointer">
-                        <div className="flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
-                          <Upload className="h-4 w-4" />
-                          {uploadMutation.isPending ? 'Importando...' : 'Selecionar CSV'}
-                        </div>
-                        <Input
-                          id="csv-upload"
-                          type="file"
-                          accept=".csv"
-                          className="hidden"
-                          onChange={handleFileUpload}
-                          disabled={uploadMutation.isPending}
-                        />
-                      </Label>
-                    </CardContent>
-                  </Card>
-
-                  {/* Excel Upload */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <FileSpreadsheet className="h-5 w-5" />
-                        Importar Excel
-                      </CardTitle>
-                      <CardDescription>
-                        Arquivos .xlsx com mapeamento de campos
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ExcelUpload onDataProcessed={handleExcelDataProcessed} />
-                    </CardContent>
-                  </Card>
+                        {uploadMutation.isPending || excelUploadMutation.isPending ? 'Processando...' : 'Selecionar Arquivo'}
+                      </div>
+                      <Input
+                        id="file-upload"
+                        type="file"
+                        accept=".csv,.xlsx,.xls"
+                        className="hidden"
+                        onChange={handleSmartFileUpload}
+                        disabled={uploadMutation.isPending || excelUploadMutation.isPending}
+                      />
+                    </Label>
+                    
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p><strong>CSV:</strong> nome,telefone,tag1;tag2;tag3</p>
+                      <p><strong>Excel:</strong> mapeamento automático de campos</p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
