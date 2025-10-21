@@ -1,0 +1,214 @@
+import { Layout } from "@/components/Layout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Upload, Search, UserPlus } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
+
+export default function Contacts() {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: contacts, isLoading } = useQuery({
+    queryKey: ["contacts"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const text = await file.text();
+      const rows = text.split("\n").slice(1); // Skip header
+      
+      const contacts = rows
+        .filter((row) => row.trim())
+        .map((row) => {
+          const [name, phone, tags] = row.split(",");
+          return {
+            name: name?.trim(),
+            phone: phone?.trim(),
+            tags: tags ? tags.split(";").map((t) => t.trim()) : [],
+          };
+        })
+        .filter((contact) => contact.name && contact.phone);
+
+      const { error } = await supabase.from("contacts").insert(contacts);
+      if (error) throw error;
+      return contacts.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      toast({
+        title: "Sucesso!",
+        description: `${count} contatos importados com sucesso.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Erro",
+        description: "Falha ao importar contatos. Verifique o formato do arquivo.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      uploadMutation.mutate(file);
+    }
+  };
+
+  const allTags = Array.from(
+    new Set(contacts?.flatMap((c) => c.tags || []))
+  ).filter(Boolean);
+
+  const filteredContacts = contacts?.filter((contact) => {
+    const matchesSearch = contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.phone.includes(searchTerm);
+    const matchesTag = !selectedTag || contact.tags?.includes(selectedTag);
+    return matchesSearch && matchesTag;
+  });
+
+  return (
+    <Layout>
+      <div className="space-y-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-bold tracking-tight text-foreground">Contatos</h1>
+            <p className="mt-2 text-muted-foreground">
+              Gerencie sua base de contatos para campanhas
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Label htmlFor="csv-upload" className="cursor-pointer">
+              <div className="flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
+                <Upload className="h-4 w-4" />
+                Importar CSV
+              </div>
+              <Input
+                id="csv-upload"
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleFileUpload}
+                disabled={uploadMutation.isPending}
+              />
+            </Label>
+          </div>
+        </div>
+
+        <Card className="shadow-[var(--shadow-elegant)]">
+          <CardHeader>
+            <CardTitle>Buscar e Filtrar</CardTitle>
+            <CardDescription>
+              Encontre contatos por nome, telefone ou tag
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nome ou telefone..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant={selectedTag === null ? "default" : "outline"}
+                className="cursor-pointer"
+                onClick={() => setSelectedTag(null)}
+              >
+                Todas
+              </Badge>
+              {allTags.map((tag) => (
+                <Badge
+                  key={tag}
+                  variant={selectedTag === tag ? "default" : "outline"}
+                  className="cursor-pointer"
+                  onClick={() => setSelectedTag(tag)}
+                >
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-[var(--shadow-elegant)]">
+          <CardHeader>
+            <CardTitle>Lista de Contatos ({filteredContacts?.length || 0})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <p className="text-center text-muted-foreground">Carregando...</p>
+            ) : filteredContacts && filteredContacts.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Telefone</TableHead>
+                    <TableHead>Tags</TableHead>
+                    <TableHead>Cadastrado em</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredContacts.map((contact) => (
+                    <TableRow key={contact.id}>
+                      <TableCell className="font-medium">{contact.name}</TableCell>
+                      <TableCell>{contact.phone}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {contact.tags?.map((tag) => (
+                            <Badge key={tag} variant="secondary">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(contact.created_at).toLocaleDateString("pt-BR")}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <UserPlus className="mb-4 h-12 w-12 text-muted-foreground" />
+                <h3 className="text-lg font-semibold">Nenhum contato encontrado</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Importe um arquivo CSV para começar
+                </p>
+                <p className="mt-4 text-xs text-muted-foreground">
+                  Formato: nome,telefone,tag1;tag2;tag3
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </Layout>
+  );
+}
