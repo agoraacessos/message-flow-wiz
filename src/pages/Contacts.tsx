@@ -98,15 +98,19 @@ export default function Contacts() {
 
   const excelUploadMutation = useMutation({
     mutationFn: async (contacts: any[]) => {
-      // Processar tags se necessário
-      const processedContacts = contacts.map((contact, index) => ({
-        ...contact,
-        id: Date.now() + index, // ID único baseado em timestamp
-        tags: typeof contact.tags === 'string' 
-          ? contact.tags.split(';').map((t: string) => t.trim()).filter(Boolean)
-          : contact.tags || [],
-        created_at: new Date().toISOString()
-      }));
+      // Processar tags se necessário e validar campos obrigatórios
+      const processedContacts = contacts
+        .filter(contact => contact.name && contact.phone) // Filtrar contatos válidos
+        .map((contact, index) => ({
+          ...contact,
+          id: Date.now() + index, // ID único baseado em timestamp
+          name: contact.name?.trim() || '',
+          phone: contact.phone?.trim() || '',
+          tags: typeof contact.tags === 'string' 
+            ? contact.tags.split(';').map((t: string) => t.trim()).filter(Boolean)
+            : contact.tags || [],
+          created_at: new Date().toISOString()
+        }));
 
       // Simular delay de processamento
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -150,8 +154,8 @@ export default function Contacts() {
   ).filter(Boolean);
 
   const filteredContacts = contacts?.filter((contact) => {
-    const matchesSearch = contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.phone.includes(searchTerm);
+    const matchesSearch = (contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
+      (contact.phone?.includes(searchTerm) || false);
     const matchesTag = !selectedTag || contact.tags?.includes(selectedTag);
     return matchesSearch && matchesTag;
   });
