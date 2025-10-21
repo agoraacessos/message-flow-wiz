@@ -31,6 +31,19 @@ export default function FieldSettings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Campos do sistema (pré-definidos)
+  const systemFields = [
+    { id: 'system_name', name: 'name', label: 'Nome', type: 'text', required: true, description: 'Nome do contato', isSystem: true },
+    { id: 'system_phone', name: 'phone', label: 'Telefone', type: 'phone', required: true, description: 'Número de telefone principal', isSystem: true },
+    { id: 'system_phone2', name: 'phone2', label: 'Telefone 2', type: 'phone', required: false, description: 'Segundo número de telefone', isSystem: true },
+    { id: 'system_phone3', name: 'phone3', label: 'Telefone 3', type: 'phone', required: false, description: 'Terceiro número de telefone', isSystem: true },
+    { id: 'system_email', name: 'email', label: 'E-mail', type: 'email', required: false, description: 'Endereço de e-mail', isSystem: true },
+    { id: 'system_tags', name: 'tags', label: 'Tags', type: 'text', required: false, description: 'Tags ou categorias (separadas por ;)', isSystem: true },
+    { id: 'system_company', name: 'company', label: 'Empresa', type: 'text', required: false, description: 'Nome da empresa', isSystem: true },
+    { id: 'system_position', name: 'position', label: 'Cargo', type: 'text', required: false, description: 'Cargo ou posição', isSystem: true },
+    { id: 'system_notes', name: 'notes', label: 'Observações', type: 'text', required: false, description: 'Observações adicionais', isSystem: true },
+  ];
+
   // Buscar campos personalizados
   const { data: customFields, isLoading } = useQuery({
     queryKey: ["custom-fields"],
@@ -42,12 +55,16 @@ export default function FieldSettings() {
       
       if (error) {
         console.error('Erro ao buscar campos personalizados:', error);
-        throw error;
+        // Retornar array vazio em caso de erro (tabela não existe ainda)
+        return [];
       }
       
       return data || [];
     },
   });
+
+  // Combinar campos do sistema com campos personalizados
+  const allFields = [...systemFields, ...(customFields || [])];
 
   // Mutação para adicionar campo
   const addFieldMutation = useMutation({
@@ -269,14 +286,14 @@ export default function FieldSettings() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Settings className="h-5 w-5" />
-              Campos Personalizados
+              Todos os Campos Disponíveis
             </CardTitle>
             <CardDescription>
-              Configure campos adicionais que podem ser usados no mapeamento de contatos e nas conversas com variáveis do sistema.
+              Visualize todos os campos disponíveis (sistema + personalizados) que podem ser usados no mapeamento de contatos e nas conversas com variáveis do sistema.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {customFields && customFields.length > 0 ? (
+            {allFields && allFields.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -289,7 +306,7 @@ export default function FieldSettings() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {customFields.map((field) => (
+                  {allFields.map((field) => (
                     <TableRow key={field.id}>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -297,6 +314,11 @@ export default function FieldSettings() {
                           <code className="text-sm bg-muted px-2 py-1 rounded">
                             {field.name}
                           </code>
+                          {field.isSystem && (
+                            <Badge variant="outline" className="text-xs">
+                              Sistema
+                            </Badge>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="font-medium">{field.label}</TableCell>
@@ -316,26 +338,32 @@ export default function FieldSettings() {
                         {field.description || '-'}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEditClick(field)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <AlertDialog>
+                        {!field.isSystem ? (
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEditClick(field)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
                             <AlertDialog>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleDeleteField(field.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              <AlertDialog>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteField(field.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialog>
                             </AlertDialog>
-                          </AlertDialog>
-                        </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            Campo do sistema
+                          </span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

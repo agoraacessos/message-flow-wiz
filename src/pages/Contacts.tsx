@@ -59,6 +59,19 @@ export default function Contacts() {
     },
   });
 
+  // Campos do sistema (pré-definidos)
+  const systemFields = [
+    { id: 'system_name', name: 'name', label: 'Nome', type: 'text', required: true, description: 'Nome do contato', isSystem: true },
+    { id: 'system_phone', name: 'phone', label: 'Telefone', type: 'phone', required: true, description: 'Número de telefone principal', isSystem: true },
+    { id: 'system_phone2', name: 'phone2', label: 'Telefone 2', type: 'phone', required: false, description: 'Segundo número de telefone', isSystem: true },
+    { id: 'system_phone3', name: 'phone3', label: 'Telefone 3', type: 'phone', required: false, description: 'Terceiro número de telefone', isSystem: true },
+    { id: 'system_email', name: 'email', label: 'E-mail', type: 'email', required: false, description: 'Endereço de e-mail', isSystem: true },
+    { id: 'system_tags', name: 'tags', label: 'Tags', type: 'text', required: false, description: 'Tags ou categorias (separadas por ;)', isSystem: true },
+    { id: 'system_company', name: 'company', label: 'Empresa', type: 'text', required: false, description: 'Nome da empresa', isSystem: true },
+    { id: 'system_position', name: 'position', label: 'Cargo', type: 'text', required: false, description: 'Cargo ou posição', isSystem: true },
+    { id: 'system_notes', name: 'notes', label: 'Observações', type: 'text', required: false, description: 'Observações adicionais', isSystem: true },
+  ];
+
   // Buscar campos personalizados
   const { data: customFields } = useQuery({
     queryKey: ["custom-fields"],
@@ -76,6 +89,9 @@ export default function Contacts() {
       return data || [];
     },
   });
+
+  // Combinar campos do sistema com campos personalizados
+  const allFields = [...systemFields, ...(customFields || [])];
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -504,9 +520,9 @@ export default function Contacts() {
           } else if (headerLower.includes('observação') || headerLower.includes('note') || headerLower.includes('comentário')) {
             autoMapping[index] = 'notes';
           } else {
-            // Tentar mapear com campos personalizados
-            if (customFields) {
-              const matchingField = customFields.find(field => 
+            // Tentar mapear com todos os campos disponíveis
+            if (allFields) {
+              const matchingField = allFields.find(field => 
                 headerLower.includes(field.name.toLowerCase()) || 
                 headerLower.includes(field.label.toLowerCase())
               );
@@ -620,9 +636,9 @@ export default function Contacts() {
               } else if (headerLower.includes('observação') || headerLower.includes('note') || headerLower.includes('comentário')) {
                 autoMapping[header] = 'notes';
               } else {
-                // Tentar mapear com campos personalizados
-                if (customFields) {
-                  const matchingField = customFields.find(field => 
+                // Tentar mapear com todos os campos disponíveis
+                if (allFields) {
+                  const matchingField = allFields.find(field => 
                     headerLower.includes(field.name.toLowerCase()) || 
                     headerLower.includes(field.label.toLowerCase())
                   );
@@ -988,14 +1004,14 @@ export default function Contacts() {
                             <SelectItem value="company">Empresa</SelectItem>
                             <SelectItem value="position">Cargo</SelectItem>
                             <SelectItem value="notes">Observações</SelectItem>
-                            {customFields && customFields.length > 0 && (
+                            {allFields && allFields.length > 0 && (
                               <>
                                 <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                                  Campos Personalizados
+                                  Todos os Campos
                                 </div>
-                                {customFields.map((field) => (
+                                {allFields.map((field) => (
                                   <SelectItem key={field.id} value={field.name}>
-                                    {field.label}
+                                    {field.label} {field.isSystem && '(Sistema)'}
                                   </SelectItem>
                                 ))}
                               </>
