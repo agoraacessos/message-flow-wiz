@@ -59,6 +59,24 @@ export default function Contacts() {
     },
   });
 
+  // Buscar campos personalizados
+  const { data: customFields } = useQuery({
+    queryKey: ["custom-fields"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('custom_fields')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Erro ao buscar campos personalizados:', error);
+        return [];
+      }
+      
+      return data || [];
+    },
+  });
+
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       const text = await file.text();
@@ -460,9 +478,11 @@ export default function Contacts() {
         
         let phoneCount = 0;
         firstRow.forEach((header, index) => {
-          if (header.includes('nome') || header.includes('name')) {
+          const headerLower = header.toLowerCase();
+          
+          if (headerLower.includes('nome') || headerLower.includes('name')) {
             autoMapping[index] = 'name';
-          } else if (header.includes('telefone') || header.includes('phone') || header.includes('celular')) {
+          } else if (headerLower.includes('telefone') || headerLower.includes('phone') || headerLower.includes('celular')) {
             if (phoneCount === 0) {
               autoMapping[index] = 'phone';
               phoneCount++;
@@ -473,16 +493,27 @@ export default function Contacts() {
               autoMapping[index] = 'phone3';
               phoneCount++;
             }
-          } else if (header.includes('email') || header.includes('e-mail')) {
+          } else if (headerLower.includes('email') || headerLower.includes('e-mail')) {
             autoMapping[index] = 'email';
-          } else if (header.includes('tag') || header.includes('etiqueta') || header.includes('categoria')) {
+          } else if (headerLower.includes('tag') || headerLower.includes('etiqueta') || headerLower.includes('categoria')) {
             autoMapping[index] = 'tags';
-          } else if (header.includes('empresa') || header.includes('company')) {
+          } else if (headerLower.includes('empresa') || headerLower.includes('company')) {
             autoMapping[index] = 'company';
-          } else if (header.includes('cargo') || header.includes('position')) {
+          } else if (headerLower.includes('cargo') || headerLower.includes('position')) {
             autoMapping[index] = 'position';
-          } else if (header.includes('observação') || header.includes('note') || header.includes('comentário')) {
+          } else if (headerLower.includes('observação') || headerLower.includes('note') || headerLower.includes('comentário')) {
             autoMapping[index] = 'notes';
+          } else {
+            // Tentar mapear com campos personalizados
+            if (customFields) {
+              const matchingField = customFields.find(field => 
+                headerLower.includes(field.name.toLowerCase()) || 
+                headerLower.includes(field.label.toLowerCase())
+              );
+              if (matchingField) {
+                autoMapping[index] = matchingField.name;
+              }
+            }
           }
         });
 
@@ -588,6 +619,17 @@ export default function Contacts() {
                 autoMapping[header] = 'position';
               } else if (headerLower.includes('observação') || headerLower.includes('note') || headerLower.includes('comentário')) {
                 autoMapping[header] = 'notes';
+              } else {
+                // Tentar mapear com campos personalizados
+                if (customFields) {
+                  const matchingField = customFields.find(field => 
+                    headerLower.includes(field.name.toLowerCase()) || 
+                    headerLower.includes(field.label.toLowerCase())
+                  );
+                  if (matchingField) {
+                    autoMapping[header] = matchingField.name;
+                  }
+                }
               }
             });
 
@@ -946,6 +988,18 @@ export default function Contacts() {
                             <SelectItem value="company">Empresa</SelectItem>
                             <SelectItem value="position">Cargo</SelectItem>
                             <SelectItem value="notes">Observações</SelectItem>
+                            {customFields && customFields.length > 0 && (
+                              <>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                                  Campos Personalizados
+                                </div>
+                                {customFields.map((field) => (
+                                  <SelectItem key={field.id} value={field.name}>
+                                    {field.label}
+                                  </SelectItem>
+                                ))}
+                              </>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>

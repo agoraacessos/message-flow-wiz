@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Home, Users, MessageSquare, Send, BarChart3 } from "lucide-react";
+import { Home, Users, MessageSquare, Send, BarChart3, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -7,6 +7,7 @@ const navigation = [
   { name: "Contatos", href: "/contacts", icon: Users },
   { name: "Mensagens", href: "/messages", icon: MessageSquare },
   { name: "Campanhas", href: "/campaigns", icon: Send },
+  { name: "Configurações", href: "/field-settings", icon: Settings },
 ];
 
 export function Sidebar() {

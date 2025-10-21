@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Contacts from "./pages/Contacts";
 import Messages from "./pages/Messages";
 import Campaigns from "./pages/Campaigns";
+import FieldSettings from "./pages/FieldSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +23,7 @@ const App = () => (
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/messages" element={<Messages />} />
           <Route path="/campaigns" element={<Campaigns />} />
+          <Route path="/field-settings" element={<FieldSettings />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
