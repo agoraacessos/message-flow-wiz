@@ -76,17 +76,26 @@ export default function Contacts() {
   const { data: customFields } = useQuery({
     queryKey: ["custom-fields"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('custom_fields')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Erro ao buscar campos personalizados:', error);
-        return [];
+      try {
+        const { data, error } = await supabase
+          .from('custom_fields')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (error) {
+          console.error('Erro ao buscar campos personalizados:', error);
+          // Se a tabela não existe, usar localStorage como fallback
+          const localFields = localStorage.getItem('custom_fields');
+          return localFields ? JSON.parse(localFields) : [];
+        }
+        
+        return data || [];
+      } catch (error) {
+        console.error('Erro ao conectar com Supabase:', error);
+        // Fallback para localStorage
+        const localFields = localStorage.getItem('custom_fields');
+        return localFields ? JSON.parse(localFields) : [];
       }
-      
-      return data || [];
     },
   });
 

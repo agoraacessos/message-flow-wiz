@@ -48,18 +48,26 @@ export default function FieldSettings() {
   const { data: customFields, isLoading } = useQuery({
     queryKey: ["custom-fields"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('custom_fields')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Erro ao buscar campos personalizados:', error);
-        // Retornar array vazio em caso de erro (tabela não existe ainda)
-        return [];
+      try {
+        const { data, error } = await supabase
+          .from('custom_fields')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (error) {
+          console.error('Erro ao buscar campos personalizados:', error);
+          // Se a tabela não existe, usar localStorage como fallback
+          const localFields = localStorage.getItem('custom_fields');
+          return localFields ? JSON.parse(localFields) : [];
+        }
+        
+        return data || [];
+      } catch (error) {
+        console.error('Erro ao conectar com Supabase:', error);
+        // Fallback para localStorage
+        const localFields = localStorage.getItem('custom_fields');
+        return localFields ? JSON.parse(localFields) : [];
       }
-      
-      return data || [];
     },
   });
 
@@ -69,11 +77,42 @@ export default function FieldSettings() {
   // Mutação para adicionar campo
   const addFieldMutation = useMutation({
     mutationFn: async (field: any) => {
-      const { error } = await supabase
-        .from('custom_fields')
-        .insert([field]);
-      
-      if (error) throw error;
+      try {
+        const { error } = await supabase
+          .from('custom_fields')
+          .insert([field]);
+        
+        if (error) {
+          // Se a tabela não existe, usar localStorage como fallback
+          const localFields = localStorage.getItem('custom_fields');
+          const fields = localFields ? JSON.parse(localFields) : [];
+          
+          const newField = {
+            id: Date.now().toString(),
+            ...field,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          
+          fields.push(newField);
+          localStorage.setItem('custom_fields', JSON.stringify(fields));
+          return;
+        }
+      } catch (error) {
+        // Fallback para localStorage
+        const localFields = localStorage.getItem('custom_fields');
+        const fields = localFields ? JSON.parse(localFields) : [];
+        
+        const newField = {
+          id: Date.now().toString(),
+          ...field,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        fields.push(newField);
+        localStorage.setItem('custom_fields', JSON.stringify(fields));
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["custom-fields"] });
@@ -104,12 +143,43 @@ export default function FieldSettings() {
   // Mutação para editar campo
   const editFieldMutation = useMutation({
     mutationFn: async ({ id, field }: { id: string, field: any }) => {
-      const { error } = await supabase
-        .from('custom_fields')
-        .update(field)
-        .eq('id', id);
-      
-      if (error) throw error;
+      try {
+        const { error } = await supabase
+          .from('custom_fields')
+          .update(field)
+          .eq('id', id);
+        
+        if (error) {
+          // Se a tabela não existe, usar localStorage como fallback
+          const localFields = localStorage.getItem('custom_fields');
+          const fields = localFields ? JSON.parse(localFields) : [];
+          
+          const fieldIndex = fields.findIndex((f: any) => f.id === id);
+          if (fieldIndex !== -1) {
+            fields[fieldIndex] = {
+              ...fields[fieldIndex],
+              ...field,
+              updated_at: new Date().toISOString()
+            };
+            localStorage.setItem('custom_fields', JSON.stringify(fields));
+          }
+          return;
+        }
+      } catch (error) {
+        // Fallback para localStorage
+        const localFields = localStorage.getItem('custom_fields');
+        const fields = localFields ? JSON.parse(localFields) : [];
+        
+        const fieldIndex = fields.findIndex((f: any) => f.id === id);
+        if (fieldIndex !== -1) {
+          fields[fieldIndex] = {
+            ...fields[fieldIndex],
+            ...field,
+            updated_at: new Date().toISOString()
+          };
+          localStorage.setItem('custom_fields', JSON.stringify(fields));
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["custom-fields"] });
@@ -133,12 +203,29 @@ export default function FieldSettings() {
   // Mutação para excluir campo
   const deleteFieldMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('custom_fields')
-        .delete()
-        .eq('id', id);
-      
-      if (error) throw error;
+      try {
+        const { error } = await supabase
+          .from('custom_fields')
+          .delete()
+          .eq('id', id);
+        
+        if (error) {
+          // Se a tabela não existe, usar localStorage como fallback
+          const localFields = localStorage.getItem('custom_fields');
+          const fields = localFields ? JSON.parse(localFields) : [];
+          
+          const filteredFields = fields.filter((f: any) => f.id !== id);
+          localStorage.setItem('custom_fields', JSON.stringify(filteredFields));
+          return;
+        }
+      } catch (error) {
+        // Fallback para localStorage
+        const localFields = localStorage.getItem('custom_fields');
+        const fields = localFields ? JSON.parse(localFields) : [];
+        
+        const filteredFields = fields.filter((f: any) => f.id !== id);
+        localStorage.setItem('custom_fields', JSON.stringify(filteredFields));
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["custom-fields"] });
@@ -275,6 +362,14 @@ export default function FieldSettings() {
             <p className="text-muted-foreground">
               Gerencie campos personalizados para usar em campanhas e conversas
             </p>
+            {customFields && customFields.length > 0 && customFields[0]?.id?.toString().length > 10 && (
+              <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ <strong>Modo Offline:</strong> Os campos personalizados estão sendo salvos localmente. 
+                  Para persistência completa, aplique a migração no Supabase.
+                </p>
+              </div>
+            )}
           </div>
           <Button onClick={() => setIsAddDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
