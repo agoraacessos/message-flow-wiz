@@ -34,6 +34,9 @@ export default function Contacts() {
     position: '',
     notes: ''
   });
+  const [isMappingDialogOpen, setIsMappingDialogOpen] = useState(false);
+  const [mappingData, setMappingData] = useState<any>(null);
+  const [fieldMapping, setFieldMapping] = useState<any>({});
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -133,6 +136,54 @@ export default function Contacts() {
 
   const handleExcelDataProcessed = (data: any[], mapping: any) => {
     excelUploadMutation.mutate(data);
+  };
+
+  // Funções para mapeamento de campos
+  const handleFieldMappingChange = (columnIndex: number, systemField: string) => {
+    setFieldMapping(prev => ({
+      ...prev,
+      [columnIndex]: systemField
+    }));
+  };
+
+  const processMappedData = () => {
+    if (!mappingData) return;
+
+    const processedContacts = mappingData.rows.map((row: any[], index: number) => {
+      const contact: any = {
+        id: Date.now() + index,
+        created_at: new Date().toISOString()
+      };
+      
+      Object.entries(fieldMapping).forEach(([columnIndex, systemField]) => {
+        const value = row[parseInt(columnIndex as string)];
+        if (value !== undefined && value !== null && value !== '') {
+          if (systemField === 'tags') {
+            contact[systemField] = typeof value === 'string' 
+              ? value.split(';').map((t: string) => t.trim()).filter(Boolean)
+              : [];
+          } else {
+            contact[systemField] = value;
+          }
+        }
+      });
+
+      return contact;
+    }).filter(contact => contact.name && contact.phone);
+
+    // Salvar os contatos
+    setLocalContacts(prev => [...prev, ...processedContacts]);
+    queryClient.invalidateQueries({ queryKey: ["contacts"] });
+    
+    // Fechar modal e limpar dados
+    setIsMappingDialogOpen(false);
+    setMappingData(null);
+    setFieldMapping({});
+    
+    toast({
+      title: "Sucesso!",
+      description: `${processedContacts.length} contatos importados com sucesso.`,
+    });
   };
 
   // Funções para gerenciar seleções
@@ -335,14 +386,14 @@ export default function Contacts() {
           })
           .filter(contact => contact.name && contact.phone);
 
-        // Salvar os contatos
-        setLocalContacts(prev => [...prev, ...processedContacts]);
-        queryClient.invalidateQueries({ queryKey: ["contacts"] });
-        
-        toast({
-          title: "Sucesso!",
-          description: `${processedContacts.length} contatos importados do CSV com sucesso.`,
+        // Mostrar modal de mapeamento para confirmação
+        setMappingData({
+          headers: firstRow,
+          rows: dataRows.map(row => row.split(',').map(c => c.trim())),
+          type: 'csv'
         });
+        setFieldMapping(autoMapping);
+        setIsMappingDialogOpen(true);
 
       } catch (error) {
         toast({
@@ -422,14 +473,14 @@ export default function Contacts() {
               return contact;
             }).filter(contact => contact.name && contact.phone);
 
-            // Salvar os contatos
-            setLocalContacts(prev => [...prev, ...processedData]);
-            queryClient.invalidateQueries({ queryKey: ["contacts"] });
-            
-            toast({
-              title: "Sucesso!",
-              description: `${processedData.length} contatos importados do Excel com sucesso.`,
+            // Mostrar modal de mapeamento para confirmação
+            setMappingData({
+              headers: headers,
+              rows: rows,
+              type: 'excel'
             });
+            setFieldMapping(autoMapping);
+            setIsMappingDialogOpen(true);
 
           } catch (err) {
             console.error('Erro ao processar Excel:', err);
@@ -711,6 +762,80 @@ export default function Contacts() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Modal de Mapeamento de Campos */}
+        <Dialog open={isMappingDialogOpen} onOpenChange={setIsMappingDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Confirmar Mapeamento de Campos</DialogTitle>
+              <DialogDescription>
+                Verifique e ajuste o mapeamento dos campos da sua planilha. O sistema detectou automaticamente os campos, mas você pode alterar conforme necessário.
+              </DialogDescription>
+            </DialogHeader>
+            {mappingData && (
+              <div className="space-y-6">
+                <div className="grid gap-4">
+                  {mappingData.headers.map((header: string, index: number) => (
+                    <div key={index} className="flex items-center gap-4 p-4 border rounded-lg">
+                      <div className="flex-1">
+                        <label className="text-sm font-medium">
+                          Coluna da Planilha: <span className="text-blue-600">{header}</span>
+                        </label>
+                        <p className="text-xs text-muted-foreground">
+                          Exemplo: {mappingData.rows[0]?.[index] || 'N/A'}
+                        </p>
+                      </div>
+                      
+                      <div className="flex-1">
+                        <Select
+                          value={fieldMapping[index] || 'none'}
+                          onValueChange={(value) => handleFieldMappingChange(index, value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o campo do sistema" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">-- Não mapear --</SelectItem>
+                            <SelectItem value="name">Nome</SelectItem>
+                            <SelectItem value="phone">Telefone</SelectItem>
+                            <SelectItem value="email">E-mail</SelectItem>
+                            <SelectItem value="tags">Tags</SelectItem>
+                            <SelectItem value="company">Empresa</SelectItem>
+                            <SelectItem value="position">Cargo</SelectItem>
+                            <SelectItem value="notes">Observações</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-muted p-4 rounded-lg">
+                  <h4 className="font-medium mb-2">Preview dos Dados:</h4>
+                  <div className="text-sm text-muted-foreground">
+                    <p>Total de registros: {mappingData.rows.length}</p>
+                    <p>Primeiros 3 registros:</p>
+                    <div className="mt-2 space-y-1">
+                      {mappingData.rows.slice(0, 3).map((row: any[], rowIndex: number) => (
+                        <div key={rowIndex} className="text-xs">
+                          {row.slice(0, 3).join(' | ')}...
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsMappingDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={processMappedData}>
+                Importar Contatos
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Modal de Adicionar Contato */}
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
