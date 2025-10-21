@@ -1,8 +1,8 @@
 -- =====================================================
--- SCHEMA COMPLETO DO SISTEMA - MESSAGE FLOW WIZ
+-- SCHEMA SEGURO - MESSAGE FLOW WIZ
 -- =====================================================
--- Execute este SQL no Supabase Dashboard > SQL Editor
--- para criar todas as tabelas do sistema
+-- Este SQL pode ser executado múltiplas vezes sem erros
+-- Execute no Supabase Dashboard > SQL Editor
 
 -- 1. TABELA DE CONTATOS
 CREATE TABLE IF NOT EXISTS public.contacts (
@@ -97,92 +97,35 @@ ALTER TABLE public.campaign_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.system_settings ENABLE ROW LEVEL SECURITY;
 
 -- =====================================================
--- POLÍTICAS RLS PERMISSIVAS
+-- POLÍTICAS RLS PERMISSIVAS (SEGURAS)
 -- =====================================================
 
--- Políticas para contacts
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies 
-        WHERE schemaname = 'public' 
-        AND tablename = 'contacts' 
-        AND policyname = 'Allow all operations on contacts'
-    ) THEN
-        CREATE POLICY "Allow all operations on contacts" ON public.contacts
-            FOR ALL USING (true) WITH CHECK (true);
-    END IF;
-END $$;
+-- Remover políticas existentes se houver
+DROP POLICY IF EXISTS "Allow all operations on contacts" ON public.contacts;
+DROP POLICY IF EXISTS "Allow all operations on custom_fields" ON public.custom_fields;
+DROP POLICY IF EXISTS "Allow all operations on messages" ON public.messages;
+DROP POLICY IF EXISTS "Allow all operations on campaigns" ON public.campaigns;
+DROP POLICY IF EXISTS "Allow all operations on campaign_logs" ON public.campaign_logs;
+DROP POLICY IF EXISTS "Allow all operations on system_settings" ON public.system_settings;
 
--- Políticas para custom_fields
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies 
-        WHERE schemaname = 'public' 
-        AND tablename = 'custom_fields' 
-        AND policyname = 'Allow all operations on custom_fields'
-    ) THEN
-        CREATE POLICY "Allow all operations on custom_fields" ON public.custom_fields
-            FOR ALL USING (true) WITH CHECK (true);
-    END IF;
-END $$;
+-- Criar políticas
+CREATE POLICY "Allow all operations on contacts" ON public.contacts
+    FOR ALL USING (true) WITH CHECK (true);
 
--- Políticas para messages
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies 
-        WHERE schemaname = 'public' 
-        AND tablename = 'messages' 
-        AND policyname = 'Allow all operations on messages'
-    ) THEN
-        CREATE POLICY "Allow all operations on messages" ON public.messages
-            FOR ALL USING (true) WITH CHECK (true);
-    END IF;
-END $$;
+CREATE POLICY "Allow all operations on custom_fields" ON public.custom_fields
+    FOR ALL USING (true) WITH CHECK (true);
 
--- Políticas para campaigns
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies 
-        WHERE schemaname = 'public' 
-        AND tablename = 'campaigns' 
-        AND policyname = 'Allow all operations on campaigns'
-    ) THEN
-        CREATE POLICY "Allow all operations on campaigns" ON public.campaigns
-            FOR ALL USING (true) WITH CHECK (true);
-    END IF;
-END $$;
+CREATE POLICY "Allow all operations on messages" ON public.messages
+    FOR ALL USING (true) WITH CHECK (true);
 
--- Políticas para campaign_logs
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies 
-        WHERE schemaname = 'public' 
-        AND tablename = 'campaign_logs' 
-        AND policyname = 'Allow all operations on campaign_logs'
-    ) THEN
-        CREATE POLICY "Allow all operations on campaign_logs" ON public.campaign_logs
-            FOR ALL USING (true) WITH CHECK (true);
-    END IF;
-END $$;
+CREATE POLICY "Allow all operations on campaigns" ON public.campaigns
+    FOR ALL USING (true) WITH CHECK (true);
 
--- Políticas para system_settings
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_policies 
-        WHERE schemaname = 'public' 
-        AND tablename = 'system_settings' 
-        AND policyname = 'Allow all operations on system_settings'
-    ) THEN
-        CREATE POLICY "Allow all operations on system_settings" ON public.system_settings
-            FOR ALL USING (true) WITH CHECK (true);
-    END IF;
-END $$;
+CREATE POLICY "Allow all operations on campaign_logs" ON public.campaign_logs
+    FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow all operations on system_settings" ON public.system_settings
+    FOR ALL USING (true) WITH CHECK (true);
 
 -- =====================================================
 -- FUNÇÕES E TRIGGERS
@@ -197,71 +140,33 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Triggers para atualizar updated_at automaticamente
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.triggers 
-        WHERE trigger_name = 'update_contacts_updated_at' 
-        AND event_object_table = 'contacts'
-    ) THEN
-        CREATE TRIGGER update_contacts_updated_at 
-            BEFORE UPDATE ON public.contacts 
-            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-    END IF;
-END $$;
+-- Remover triggers existentes se houver
+DROP TRIGGER IF EXISTS update_contacts_updated_at ON public.contacts;
+DROP TRIGGER IF EXISTS update_custom_fields_updated_at ON public.custom_fields;
+DROP TRIGGER IF EXISTS update_messages_updated_at ON public.messages;
+DROP TRIGGER IF EXISTS update_campaigns_updated_at ON public.campaigns;
+DROP TRIGGER IF EXISTS update_system_settings_updated_at ON public.system_settings;
 
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.triggers 
-        WHERE trigger_name = 'update_custom_fields_updated_at' 
-        AND event_object_table = 'custom_fields'
-    ) THEN
-        CREATE TRIGGER update_custom_fields_updated_at 
-            BEFORE UPDATE ON public.custom_fields 
-            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-    END IF;
-END $$;
+-- Criar triggers
+CREATE TRIGGER update_contacts_updated_at 
+    BEFORE UPDATE ON public.contacts 
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.triggers 
-        WHERE trigger_name = 'update_messages_updated_at' 
-        AND event_object_table = 'messages'
-    ) THEN
-        CREATE TRIGGER update_messages_updated_at 
-            BEFORE UPDATE ON public.messages 
-            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-    END IF;
-END $$;
+CREATE TRIGGER update_custom_fields_updated_at 
+    BEFORE UPDATE ON public.custom_fields 
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.triggers 
-        WHERE trigger_name = 'update_campaigns_updated_at' 
-        AND event_object_table = 'campaigns'
-    ) THEN
-        CREATE TRIGGER update_campaigns_updated_at 
-            BEFORE UPDATE ON public.campaigns 
-            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-    END IF;
-END $$;
+CREATE TRIGGER update_messages_updated_at 
+    BEFORE UPDATE ON public.messages 
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.triggers 
-        WHERE trigger_name = 'update_system_settings_updated_at' 
-        AND event_object_table = 'system_settings'
-    ) THEN
-        CREATE TRIGGER update_system_settings_updated_at 
-            BEFORE UPDATE ON public.system_settings 
-            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-    END IF;
-END $$;
+CREATE TRIGGER update_campaigns_updated_at 
+    BEFORE UPDATE ON public.campaigns 
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_system_settings_updated_at 
+    BEFORE UPDATE ON public.system_settings 
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =====================================================
 -- DADOS INICIAIS DO SISTEMA
