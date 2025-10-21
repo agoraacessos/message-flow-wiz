@@ -22,7 +22,7 @@ export default function Contacts() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [localContacts, setLocalContacts] = useState<any[]>([]);
-  const [selectedContacts, setSelectedContacts] = useState<Set<number>>(new Set());
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [editingContact, setEditingContact] = useState<any>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -41,11 +41,21 @@ export default function Contacts() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+
   const { data: contacts, isLoading } = useQuery({
-    queryKey: ["contacts", localContacts],
+    queryKey: ["contacts"],
     queryFn: async () => {
-      // Apenas contatos importados (sem dados fake)
-      return localContacts;
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Erro ao buscar contatos:', error);
+        throw error;
+      }
+      
+      return data || [];
     },
   });
 
@@ -151,10 +161,7 @@ export default function Contacts() {
     if (!mappingData) return;
 
     const processedContacts = mappingData.rows.map((row: any[], index: number) => {
-      const contact: any = {
-        id: Date.now() + index,
-        created_at: new Date().toISOString()
-      };
+      const contact: any = {};
       
       Object.entries(fieldMapping).forEach(([columnIndex, systemField]) => {
         const value = row[parseInt(columnIndex as string)];
@@ -172,8 +179,21 @@ export default function Contacts() {
       return contact;
     }).filter(contact => contact.name && contact.phone);
 
-    // Salvar os contatos
-    setLocalContacts(prev => [...prev, ...processedContacts]);
+    // Salvar os contatos no Supabase
+    const { error } = await supabase
+      .from('contacts')
+      .insert(processedContacts);
+    
+    if (error) {
+      console.error('Erro ao salvar contatos:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao salvar contatos no banco de dados.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     queryClient.invalidateQueries({ queryKey: ["contacts"] });
     
     // Fechar modal e limpar dados
@@ -188,7 +208,7 @@ export default function Contacts() {
   };
 
   // Funções para gerenciar seleções
-  const handleSelectContact = (contactId: number) => {
+  const handleSelectContact = (contactId: string) => {
     const newSelected = new Set(selectedContacts);
     if (newSelected.has(contactId)) {
       newSelected.delete(contactId);
@@ -212,18 +232,40 @@ export default function Contacts() {
     setIsEditDialogOpen(true);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingContact) return;
     
-    setLocalContacts(prev => 
-      prev.map(contact => 
-        contact.id === editingContact.id ? editingContact : contact
-      )
-    );
+    if (!editingContact.name || !editingContact.phone) {
+      toast({
+        title: "Erro",
+        description: "Nome e telefone são obrigatórios.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const { error } = await supabase
+      .from('contacts')
+      .update({
+        name: editingContact.name,
+        phone: editingContact.phone,
+        tags: editingContact.tags || []
+      })
+      .eq('id', editingContact.id);
     
+    if (error) {
+      console.error('Erro ao atualizar contato:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao atualizar contato.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    queryClient.invalidateQueries({ queryKey: ["contacts"] });
     setIsEditDialogOpen(false);
     setEditingContact(null);
-    queryClient.invalidateQueries({ queryKey: ["contacts"] });
     
     toast({
       title: "Sucesso!",
@@ -232,8 +274,22 @@ export default function Contacts() {
   };
 
   // Funções para exclusão
-  const handleDeleteContact = (contactId: number) => {
-    setLocalContacts(prev => prev.filter(contact => contact.id !== contactId));
+  const handleDeleteContact = async (contactId: string) => {
+    const { error } = await supabase
+      .from('contacts')
+      .delete()
+      .eq('id', contactId);
+    
+    if (error) {
+      console.error('Erro ao excluir contato:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao excluir contato.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setSelectedContacts(prev => {
       const newSelected = new Set(prev);
       newSelected.delete(contactId);
@@ -247,21 +303,35 @@ export default function Contacts() {
     });
   };
 
-  const handleDeleteSelected = () => {
-    setLocalContacts(prev => 
-      prev.filter(contact => !selectedContacts.has(contact.id))
-    );
+  const handleDeleteSelected = async () => {
+    const contactIds = Array.from(selectedContacts);
+    
+    const { error } = await supabase
+      .from('contacts')
+      .delete()
+      .in('id', contactIds);
+    
+    if (error) {
+      console.error('Erro ao excluir contatos:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao excluir contatos.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setSelectedContacts(new Set());
     queryClient.invalidateQueries({ queryKey: ["contacts"] });
     
     toast({
       title: "Sucesso!",
-      description: `${selectedContacts.size} contatos excluídos com sucesso.`,
+      description: `${contactIds.length} contatos excluídos com sucesso.`,
     });
   };
 
   // Função para adicionar novo contato
-  const handleAddContact = () => {
+  const handleAddContact = async () => {
     if (!newContact.name || !newContact.phone) {
       toast({
         title: "Erro",
@@ -272,15 +342,27 @@ export default function Contacts() {
     }
 
     const contact = {
-      ...newContact,
-      id: Date.now(),
-      created_at: new Date().toISOString(),
+      name: newContact.name,
+      phone: newContact.phone,
       tags: typeof newContact.tags === 'string' 
         ? newContact.tags.split(';').map((t: string) => t.trim()).filter(Boolean)
         : newContact.tags || []
     };
 
-    setLocalContacts(prev => [...prev, contact]);
+    const { error } = await supabase
+      .from('contacts')
+      .insert([contact]);
+    
+    if (error) {
+      console.error('Erro ao adicionar contato:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao adicionar contato.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     queryClient.invalidateQueries({ queryKey: ["contacts"] });
     
     // Reset form
