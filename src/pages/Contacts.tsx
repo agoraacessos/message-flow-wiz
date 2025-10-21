@@ -6,7 +6,10 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Upload, Search, UserPlus, FileSpreadsheet } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Upload, Search, UserPlus, FileSpreadsheet, Edit, Trash2, CheckSquare, Square } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
@@ -17,6 +20,9 @@ export default function Contacts() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [localContacts, setLocalContacts] = useState<any[]>([]);
+  const [selectedContacts, setSelectedContacts] = useState<Set<number>>(new Set());
+  const [editingContact, setEditingContact] = useState<any>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -116,6 +122,79 @@ export default function Contacts() {
 
   const handleExcelDataProcessed = (data: any[], mapping: any) => {
     excelUploadMutation.mutate(data);
+  };
+
+  // Funções para gerenciar seleções
+  const handleSelectContact = (contactId: number) => {
+    const newSelected = new Set(selectedContacts);
+    if (newSelected.has(contactId)) {
+      newSelected.delete(contactId);
+    } else {
+      newSelected.add(contactId);
+    }
+    setSelectedContacts(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedContacts.size === filteredContacts?.length) {
+      setSelectedContacts(new Set());
+    } else {
+      setSelectedContacts(new Set(filteredContacts?.map(c => c.id) || []));
+    }
+  };
+
+  // Funções para edição
+  const handleEditContact = (contact: any) => {
+    setEditingContact(contact);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingContact) return;
+    
+    setLocalContacts(prev => 
+      prev.map(contact => 
+        contact.id === editingContact.id ? editingContact : contact
+      )
+    );
+    
+    setIsEditDialogOpen(false);
+    setEditingContact(null);
+    queryClient.invalidateQueries({ queryKey: ["contacts"] });
+    
+    toast({
+      title: "Sucesso!",
+      description: "Contato atualizado com sucesso.",
+    });
+  };
+
+  // Funções para exclusão
+  const handleDeleteContact = (contactId: number) => {
+    setLocalContacts(prev => prev.filter(contact => contact.id !== contactId));
+    setSelectedContacts(prev => {
+      const newSelected = new Set(prev);
+      newSelected.delete(contactId);
+      return newSelected;
+    });
+    queryClient.invalidateQueries({ queryKey: ["contacts"] });
+    
+    toast({
+      title: "Sucesso!",
+      description: "Contato excluído com sucesso.",
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    setLocalContacts(prev => 
+      prev.filter(contact => !selectedContacts.has(contact.id))
+    );
+    setSelectedContacts(new Set());
+    queryClient.invalidateQueries({ queryKey: ["contacts"] });
+    
+    toast({
+      title: "Sucesso!",
+      description: `${selectedContacts.size} contatos excluídos com sucesso.`,
+    });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -260,7 +339,39 @@ export default function Contacts() {
 
             <Card className="shadow-[var(--shadow-elegant)]">
               <CardHeader>
-                <CardTitle>Lista de Contatos ({filteredContacts?.length || 0})</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Lista de Contatos ({filteredContacts?.length || 0})</CardTitle>
+                  {selectedContacts.size > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {selectedContacts.size} selecionado(s)
+                      </span>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="destructive" size="sm">
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Excluir Selecionados
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Tem certeza que deseja excluir {selectedContacts.size} contato(s) selecionado(s)? 
+                              Esta ação não pode ser desfeita.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleDeleteSelected}>
+                              Excluir
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 {isLoading ? (
@@ -269,15 +380,28 @@ export default function Contacts() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-12">
+                          <Checkbox
+                            checked={selectedContacts.size === filteredContacts.length && filteredContacts.length > 0}
+                            onCheckedChange={handleSelectAll}
+                          />
+                        </TableHead>
                         <TableHead>Nome</TableHead>
                         <TableHead>Telefone</TableHead>
                         <TableHead>Tags</TableHead>
                         <TableHead>Cadastrado em</TableHead>
+                        <TableHead className="w-24">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredContacts.map((contact) => (
                         <TableRow key={contact.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedContacts.has(contact.id)}
+                              onCheckedChange={() => handleSelectContact(contact.id)}
+                            />
+                          </TableCell>
                           <TableCell className="font-medium">{contact.name}</TableCell>
                           <TableCell>{contact.phone}</TableCell>
                           <TableCell>
@@ -291,6 +415,39 @@ export default function Contacts() {
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             {new Date(contact.created_at).toLocaleDateString("pt-BR")}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEditContact(contact)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="sm">
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Tem certeza que deseja excluir o contato "{contact.name}"? 
+                                      Esta ação não pode ser desfeita.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleDeleteContact(contact.id)}>
+                                      Excluir
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -312,6 +469,98 @@ export default function Contacts() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Modal de Edição */}
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar Contato</DialogTitle>
+              <DialogDescription>
+                Edite as informações do contato abaixo.
+              </DialogDescription>
+            </DialogHeader>
+            {editingContact && (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="edit-name">Nome</Label>
+                  <Input
+                    id="edit-name"
+                    value={editingContact.name || ''}
+                    onChange={(e) => setEditingContact({
+                      ...editingContact,
+                      name: e.target.value
+                    })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-phone">Telefone</Label>
+                  <Input
+                    id="edit-phone"
+                    value={editingContact.phone || ''}
+                    onChange={(e) => setEditingContact({
+                      ...editingContact,
+                      phone: e.target.value
+                    })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-email">E-mail</Label>
+                  <Input
+                    id="edit-email"
+                    type="email"
+                    value={editingContact.email || ''}
+                    onChange={(e) => setEditingContact({
+                      ...editingContact,
+                      email: e.target.value
+                    })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-tags">Tags (separadas por ponto e vírgula)</Label>
+                  <Input
+                    id="edit-tags"
+                    value={Array.isArray(editingContact.tags) ? editingContact.tags.join(';') : editingContact.tags || ''}
+                    onChange={(e) => setEditingContact({
+                      ...editingContact,
+                      tags: e.target.value.split(';').map(t => t.trim()).filter(Boolean)
+                    })}
+                    placeholder="cliente;vip;prospecto"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-company">Empresa</Label>
+                  <Input
+                    id="edit-company"
+                    value={editingContact.company || ''}
+                    onChange={(e) => setEditingContact({
+                      ...editingContact,
+                      company: e.target.value
+                    })}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-notes">Observações</Label>
+                  <Input
+                    id="edit-notes"
+                    value={editingContact.notes || ''}
+                    onChange={(e) => setEditingContact({
+                      ...editingContact,
+                      notes: e.target.value
+                    })}
+                  />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleSaveEdit}>
+                Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
