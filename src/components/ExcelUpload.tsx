@@ -86,10 +86,18 @@ export const ExcelUpload: React.FC<ExcelUploadProps> = ({ onDataProcessed }) => 
   };
 
   const handleFieldMapping = (excelColumn: string, systemField: string) => {
-    setFieldMapping(prev => ({
-      ...prev,
-      [excelColumn]: systemField
-    }));
+    if (systemField === "none") {
+      setFieldMapping(prev => {
+        const newMapping = { ...prev };
+        delete newMapping[excelColumn];
+        return newMapping;
+      });
+    } else {
+      setFieldMapping(prev => ({
+        ...prev,
+        [excelColumn]: systemField
+      }));
+    }
   };
 
   const processData = () => {
@@ -199,14 +207,14 @@ export const ExcelUpload: React.FC<ExcelUploadProps> = ({ onDataProcessed }) => 
                   
                   <div className="flex-1">
                     <Select
-                      value={fieldMapping[header] || ''}
+                      value={fieldMapping[header] || 'none'}
                       onValueChange={(value) => handleFieldMapping(header, value)}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione o campo do sistema" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">-- Não mapear --</SelectItem>
+                        <SelectItem value="none">-- Não mapear --</SelectItem>
                         {SYSTEM_FIELDS.map((field) => (
                           <SelectItem key={field.value} value={field.value}>
                             {field.label}
