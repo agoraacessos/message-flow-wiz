@@ -22,12 +22,30 @@ export default function Contacts() {
   const { data: contacts, isLoading } = useQuery({
     queryKey: ["contacts"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
+      // Dados de exemplo para demonstração
+      return [
+        {
+          id: 1,
+          name: "João Silva",
+          phone: "11999999999",
+          tags: ["cliente", "vip"],
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 2,
+          name: "Maria Santos",
+          phone: "11888888888",
+          tags: ["prospecto"],
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 3,
+          name: "Pedro Costa",
+          phone: "11777777777",
+          tags: ["cliente"],
+          created_at: new Date().toISOString()
+        }
+      ];
     },
   });
 
@@ -48,8 +66,11 @@ export default function Contacts() {
         })
         .filter((contact) => contact.name && contact.phone);
 
-      const { error } = await supabase.from("contacts").insert(contacts);
-      if (error) throw error;
+      // Simular delay de processamento
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Para demonstração, vamos simular sucesso
+      console.log('Contatos CSV processados:', contacts);
       return contacts.length;
     },
     onSuccess: (count) => {
@@ -78,8 +99,11 @@ export default function Contacts() {
           : contact.tags || []
       }));
 
-      const { error } = await supabase.from("contacts").insert(processedContacts);
-      if (error) throw error;
+      // Simular delay de processamento
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Para demonstração, vamos simular sucesso
+      console.log('Contatos processados:', processedContacts);
       return processedContacts.length;
     },
     onSuccess: (count) => {
