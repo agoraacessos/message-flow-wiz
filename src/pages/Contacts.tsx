@@ -157,7 +157,7 @@ export default function Contacts() {
     }));
   };
 
-  const processMappedData = () => {
+  const processMappedData = async () => {
     if (!mappingData) return;
 
     const processedContacts = mappingData.rows.map((row: any[], index: number) => {
