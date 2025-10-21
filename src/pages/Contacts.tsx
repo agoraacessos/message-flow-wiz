@@ -16,14 +16,15 @@ import { ExcelUpload } from "@/components/ExcelUpload";
 export default function Contacts() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [localContacts, setLocalContacts] = useState<any[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: contacts, isLoading } = useQuery({
-    queryKey: ["contacts"],
+    queryKey: ["contacts", localContacts],
     queryFn: async () => {
-      // Dados de exemplo para demonstração
-      return [
+      // Dados de exemplo + contatos importados
+      const exampleContacts = [
         {
           id: 1,
           name: "João Silva",
@@ -46,6 +47,8 @@ export default function Contacts() {
           created_at: new Date().toISOString()
         }
       ];
+      
+      return [...exampleContacts, ...localContacts];
     },
   });
 
@@ -56,12 +59,14 @@ export default function Contacts() {
       
       const contacts = rows
         .filter((row) => row.trim())
-        .map((row) => {
+        .map((row, index) => {
           const [name, phone, tags] = row.split(",");
           return {
+            id: Date.now() + index, // ID único baseado em timestamp
             name: name?.trim(),
             phone: phone?.trim(),
             tags: tags ? tags.split(";").map((t) => t.trim()) : [],
+            created_at: new Date().toISOString()
           };
         })
         .filter((contact) => contact.name && contact.phone);
@@ -69,8 +74,10 @@ export default function Contacts() {
       // Simular delay de processamento
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Para demonstração, vamos simular sucesso
-      console.log('Contatos CSV processados:', contacts);
+      // Salvar os contatos no estado local
+      setLocalContacts(prev => [...prev, ...contacts]);
+      
+      console.log('Contatos CSV processados e salvos:', contacts);
       return contacts.length;
     },
     onSuccess: (count) => {
@@ -92,18 +99,22 @@ export default function Contacts() {
   const excelUploadMutation = useMutation({
     mutationFn: async (contacts: any[]) => {
       // Processar tags se necessário
-      const processedContacts = contacts.map(contact => ({
+      const processedContacts = contacts.map((contact, index) => ({
         ...contact,
+        id: Date.now() + index, // ID único baseado em timestamp
         tags: typeof contact.tags === 'string' 
           ? contact.tags.split(';').map((t: string) => t.trim()).filter(Boolean)
-          : contact.tags || []
+          : contact.tags || [],
+        created_at: new Date().toISOString()
       }));
 
       // Simular delay de processamento
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Para demonstração, vamos simular sucesso
-      console.log('Contatos processados:', processedContacts);
+      // Salvar os contatos no estado local
+      setLocalContacts(prev => [...prev, ...processedContacts]);
+      
+      console.log('Contatos processados e salvos:', processedContacts);
       return processedContacts.length;
     },
     onSuccess: (count) => {
