@@ -265,8 +265,92 @@ export default function Contacts() {
     const fileName = file.name.toLowerCase();
     
     if (fileName.endsWith('.csv')) {
-      // Processar como CSV
-      uploadMutation.mutate(file);
+      // Processar CSV com mapeamento automático
+      try {
+        const text = await file.text();
+        const rows = text.split("\n").filter(row => row.trim());
+        
+        if (rows.length === 0) {
+          toast({
+            title: "Erro",
+            description: "O arquivo CSV está vazio",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Detectar cabeçalhos automaticamente
+        const firstRow = rows[0].split(',').map(h => h.trim().toLowerCase());
+        const dataRows = rows.slice(1);
+        
+        // Mapeamento automático baseado nos cabeçalhos
+        const autoMapping: { [key: string]: string } = {};
+        
+        firstRow.forEach((header, index) => {
+          if (header.includes('nome') || header.includes('name')) {
+            autoMapping[index] = 'name';
+          } else if (header.includes('telefone') || header.includes('phone') || header.includes('celular')) {
+            autoMapping[index] = 'phone';
+          } else if (header.includes('email') || header.includes('e-mail')) {
+            autoMapping[index] = 'email';
+          } else if (header.includes('tag') || header.includes('etiqueta') || header.includes('categoria')) {
+            autoMapping[index] = 'tags';
+          } else if (header.includes('empresa') || header.includes('company')) {
+            autoMapping[index] = 'company';
+          } else if (header.includes('cargo') || header.includes('position')) {
+            autoMapping[index] = 'position';
+          } else if (header.includes('observação') || header.includes('note') || header.includes('comentário')) {
+            autoMapping[index] = 'notes';
+          }
+        });
+
+        // Se não encontrou mapeamento automático, usar formato padrão (primeiras 3 colunas)
+        if (Object.keys(autoMapping).length === 0) {
+          autoMapping[0] = 'name';
+          autoMapping[1] = 'phone';
+          autoMapping[2] = 'tags';
+        }
+
+        // Processar dados
+        const processedContacts = dataRows
+          .map((row, index) => {
+            const columns = row.split(',').map(c => c.trim());
+            const contact: any = {
+              id: Date.now() + index,
+              created_at: new Date().toISOString()
+            };
+            
+            Object.entries(autoMapping).forEach(([columnIndex, systemField]) => {
+              const value = columns[parseInt(columnIndex)];
+              if (value !== undefined) {
+                if (systemField === 'tags') {
+                  contact[systemField] = value.split(';').map((t: string) => t.trim()).filter(Boolean);
+                } else {
+                  contact[systemField] = value;
+                }
+              }
+            });
+
+            return contact;
+          })
+          .filter(contact => contact.name && contact.phone);
+
+        // Salvar os contatos
+        setLocalContacts(prev => [...prev, ...processedContacts]);
+        queryClient.invalidateQueries({ queryKey: ["contacts"] });
+        
+        toast({
+          title: "Sucesso!",
+          description: `${processedContacts.length} contatos importados do CSV com sucesso.`,
+        });
+
+      } catch (error) {
+        toast({
+          title: "Erro",
+          description: "Erro ao processar o arquivo CSV.",
+          variant: "destructive",
+        });
+      }
     } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
       // Processar como Excel
       try {
@@ -416,51 +500,35 @@ export default function Contacts() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid gap-6 md:grid-cols-2">
-                  {/* CSV Upload */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
+                <div className="text-center space-y-4">
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-semibold">Importar Lista de Contatos</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Faça upload de um arquivo CSV ou Excel (.xlsx) - o sistema detectará automaticamente o formato e mapeará os campos
+                    </p>
+                  </div>
+                  
+                  <div className="flex flex-col items-center gap-4">
+                    <Label htmlFor="smart-file-upload" className="cursor-pointer">
+                      <div className="flex h-12 items-center gap-3 rounded-lg bg-primary px-6 text-base font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors">
                         <Upload className="h-5 w-5" />
-                        Importar CSV
-                      </CardTitle>
-                      <CardDescription>
-                        Formato: nome,telefone,tag1;tag2;tag3
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Label htmlFor="csv-upload" className="cursor-pointer">
-                        <div className="flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90">
-                          <Upload className="h-4 w-4" />
-                          {uploadMutation.isPending ? 'Importando...' : 'Selecionar CSV'}
-                        </div>
-                        <Input
-                          id="csv-upload"
-                          type="file"
-                          accept=".csv"
-                          className="hidden"
-                          onChange={handleFileUpload}
-                          disabled={uploadMutation.isPending}
-                        />
-                      </Label>
-                    </CardContent>
-                  </Card>
-
-                  {/* Excel Upload */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <FileSpreadsheet className="h-5 w-5" />
-                        Importar Excel
-                      </CardTitle>
-                      <CardDescription>
-                        Arquivos .xlsx com mapeamento de campos
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ExcelUpload onDataProcessed={handleExcelDataProcessed} />
-                    </CardContent>
-                  </Card>
+                        {uploadMutation.isPending || excelUploadMutation.isPending ? 'Processando...' : 'Selecionar Arquivo'}
+                      </div>
+                      <Input
+                        id="smart-file-upload"
+                        type="file"
+                        accept=".csv,.xlsx,.xls"
+                        className="hidden"
+                        onChange={handleSmartFileUpload}
+                        disabled={uploadMutation.isPending || excelUploadMutation.isPending}
+                      />
+                    </Label>
+                    
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p><strong>Formatos suportados:</strong> CSV, Excel (.xlsx/.xls)</p>
+                      <p><strong>Mapeamento automático:</strong> nome, telefone, email, tags, empresa, cargo, observações</p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
