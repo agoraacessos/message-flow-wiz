@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { sendWebhook } from '@/utils/webhookProxy';
 
 export function useCampaignProcessor() {
   const queryClient = useQueryClient();
@@ -186,26 +187,14 @@ export function useCampaignProcessor() {
               }
             };
 
-            const webhookResponse = await fetch(campaign.webhook_url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(webhookPayload)
-            });
+            const webhookResult = await sendWebhook(campaign.webhook_url, webhookPayload);
             
-            if (webhookResponse.ok) {
-              console.log(`✅ Webhook enviado com sucesso para ${contact.name} (${webhookResponse.status})`);
+            if (webhookResult.success) {
+              console.log(`✅ Webhook enviado com sucesso para ${contact.name} (${webhookResult.status})`);
             } else {
               console.warn(`❌ Webhook falhou para ${contact.name}:`);
-              console.warn(`   Status: ${webhookResponse.status} ${webhookResponse.statusText}`);
+              console.warn(`   Erro: ${webhookResult.error}`);
               console.warn(`   URL: ${campaign.webhook_url}`);
-              
-              // Tentar ler resposta de erro
-              try {
-                const errorText = await webhookResponse.text();
-                console.warn(`   Resposta: ${errorText}`);
-              } catch (e) {
-                console.warn(`   Não foi possível ler resposta de erro`);
-              }
             }
           } catch (webhookError) {
             console.warn(`❌ Erro de rede ao chamar webhook para ${contact.name}:`);

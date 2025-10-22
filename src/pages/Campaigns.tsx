@@ -5,13 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Send, Clock, CheckCircle2, XCircle, Plus, Search, Filter, Users, Calendar, Building, Edit, Trash2 } from "lucide-react";
+import { Send, Clock, CheckCircle2, XCircle, Plus, Search, Filter, Users, Calendar, Building, Edit, Trash2, TestTube } from "lucide-react";
 import { CampaignStatus } from "@/components/CampaignStatus";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useCampaignProcessor } from "@/hooks/useCampaignProcessor";
+import { testWebhook } from "@/utils/testWebhook";
 
 export default function Campaigns() {
   const [name, setName] = useState("");
@@ -40,6 +41,46 @@ export default function Campaigns() {
   
   // Hook para processar campanhas imediatas automaticamente
   useCampaignProcessor();
+
+  // Função para testar webhook
+  const handleTestWebhook = async () => {
+    if (!webhookUrl) {
+      toast({
+        title: "Erro",
+        description: "Por favor, insira uma URL de webhook primeiro",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      toast({
+        title: "Testando Webhook...",
+        description: "Enviando dados de teste para o webhook",
+      });
+
+      const result = await testWebhook(webhookUrl);
+      
+      if (result.success) {
+        toast({
+          title: "✅ Webhook Funcionando!",
+          description: "O webhook recebeu os dados de teste com sucesso",
+        });
+      } else {
+        toast({
+          title: "❌ Webhook Falhou",
+          description: `Erro: ${result.error || 'Erro desconhecido'}`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "❌ Erro no Teste",
+        description: `Falha ao testar webhook: ${error.message}`,
+        variant: "destructive",
+      });
+    }
+  };
 
   const { data: messages } = useQuery({
     queryKey: ["messages"],
@@ -845,39 +886,9 @@ export default function Campaigns() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={async () => {
-                        try {
-                          const response = await fetch(webhookUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              test: true,
-                              message: 'Teste de webhook',
-                              timestamp: new Date().toISOString()
-                            })
-                          });
-                          
-                          if (response.ok) {
-                            toast({
-                              title: "✅ Webhook OK!",
-                              description: `Status: ${response.status} - Webhook funcionando!`,
-                            });
-                          } else {
-                            toast({
-                              title: "❌ Webhook com Problema",
-                              description: `Status: ${response.status} - Verifique a URL`,
-                              variant: "destructive",
-                            });
-                          }
-                        } catch (error) {
-                          toast({
-                            title: "❌ Erro no Webhook",
-                            description: `Erro: ${error.message} - URL inválida ou inacessível`,
-                            variant: "destructive",
-                          });
-                        }
-                      }}
+                      onClick={handleTestWebhook}
                     >
+                      <TestTube className="w-4 h-4 mr-2" />
                       Testar
                     </Button>
                   )}
