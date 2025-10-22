@@ -27,17 +27,16 @@ export default function FieldSettings() {
     required: false,
     description: ''
   });
-  const [newOption, setNewOption] = useState('');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   // Campos do sistema (pré-definidos)
   const systemFields = [
     { id: 'system_name', name: 'name', label: 'Nome', type: 'text', required: true, description: 'Nome do contato', isSystem: true },
-    { id: 'system_phone', name: 'phone', label: 'Telefone', type: 'phone', required: true, description: 'Número de telefone principal', isSystem: true },
-    { id: 'system_phone2', name: 'phone2', label: 'Telefone 2', type: 'phone', required: false, description: 'Segundo número de telefone', isSystem: true },
-    { id: 'system_phone3', name: 'phone3', label: 'Telefone 3', type: 'phone', required: false, description: 'Terceiro número de telefone', isSystem: true },
-    { id: 'system_email', name: 'email', label: 'E-mail', type: 'email', required: false, description: 'Endereço de e-mail', isSystem: true },
+    { id: 'system_phone', name: 'phone', label: 'Telefone', type: 'text', required: true, description: 'Número de telefone principal', isSystem: true },
+    { id: 'system_phone2', name: 'phone2', label: 'Telefone 2', type: 'text', required: false, description: 'Segundo número de telefone', isSystem: true },
+    { id: 'system_phone3', name: 'phone3', label: 'Telefone 3', type: 'text', required: false, description: 'Terceiro número de telefone', isSystem: true },
+    { id: 'system_email', name: 'email', label: 'E-mail', type: 'text', required: false, description: 'Endereço de e-mail', isSystem: true },
     { id: 'system_tags', name: 'tags', label: 'Tags', type: 'text', required: false, description: 'Tags ou categorias (separadas por ;)', isSystem: true },
     { id: 'system_company', name: 'company', label: 'Empresa', type: 'text', required: false, description: 'Nome da empresa', isSystem: true },
     { id: 'system_position', name: 'position', label: 'Cargo', type: 'text', required: false, description: 'Cargo ou posição', isSystem: true },
@@ -211,48 +210,10 @@ export default function FieldSettings() {
     setIsEditDialogOpen(true);
   };
 
-  const addOption = () => {
-    if (newOption.trim()) {
-      if (isEditDialogOpen) {
-        setEditingField(prev => ({
-          ...prev,
-          options: [...(prev?.options || []), newOption.trim()]
-        }));
-      } else {
-        setNewField(prev => ({
-          ...prev,
-          options: [...prev.options, newOption.trim()]
-        }));
-      }
-      setNewOption('');
-    }
-  };
 
-  const removeOption = (index: number) => {
-    if (isEditDialogOpen) {
-      setEditingField(prev => ({
-        ...prev,
-        options: prev?.options?.filter((_: any, i: number) => i !== index) || []
-      }));
-    } else {
-      setNewField(prev => ({
-        ...prev,
-        options: prev.options.filter((_, i) => i !== index)
-      }));
-    }
-  };
 
   const getFieldTypeLabel = (type: string) => {
-    const types: { [key: string]: string } = {
-      text: 'Texto',
-      number: 'Número',
-      email: 'E-mail',
-      phone: 'Telefone',
-      date: 'Data',
-      boolean: 'Sim/Não',
-      select: 'Lista de Opções'
-    };
-    return types[type] || type;
+    return 'Texto'; // Todos os campos personalizados são texto
   };
 
   if (isLoading) {
@@ -347,17 +308,13 @@ export default function FieldSettings() {
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <AlertDialog>
-                              <AlertDialog>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleDeleteField(field.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialog>
-                            </AlertDialog>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteField(field.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">
@@ -421,24 +378,12 @@ export default function FieldSettings() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="field-type">Tipo do Campo</Label>
-                  <Select
-                    value={newField.type}
-                    onValueChange={(value) => setNewField({ ...newField, type: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="text">Texto</SelectItem>
-                      <SelectItem value="number">Número</SelectItem>
-                      <SelectItem value="email">E-mail</SelectItem>
-                      <SelectItem value="phone">Telefone</SelectItem>
-                      <SelectItem value="date">Data</SelectItem>
-                      <SelectItem value="boolean">Sim/Não</SelectItem>
-                      <SelectItem value="select">Lista de Opções</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label>Tipo do Campo</Label>
+                  <div className="p-3 bg-muted rounded-md">
+                    <p className="text-sm text-muted-foreground">
+                      Campos personalizados são sempre do tipo <strong>Texto</strong>
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center space-x-2">
                   <input
@@ -452,40 +397,6 @@ export default function FieldSettings() {
                 </div>
               </div>
 
-              {newField.type === 'select' && (
-                <div>
-                  <Label>Opções da Lista</Label>
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <Input
-                        value={newOption}
-                        onChange={(e) => setNewOption(e.target.value)}
-                        placeholder="Digite uma opção"
-                        onKeyPress={(e) => e.key === 'Enter' && addOption()}
-                      />
-                      <Button type="button" onClick={addOption} variant="outline">
-                        Adicionar
-                      </Button>
-                    </div>
-                    {newField.options.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {newField.options.map((option, index) => (
-                          <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                            {option}
-                            <button
-                              type="button"
-                              onClick={() => removeOption(index)}
-                              className="ml-1 hover:text-destructive"
-                            >
-                              ×
-                            </button>
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
 
               <div>
                 <Label htmlFor="field-description">Descrição</Label>
@@ -546,24 +457,12 @@ export default function FieldSettings() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="edit-field-type">Tipo do Campo</Label>
-                    <Select
-                      value={editingField.type}
-                      onValueChange={(value) => setEditingField({ ...editingField, type: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="text">Texto</SelectItem>
-                        <SelectItem value="number">Número</SelectItem>
-                        <SelectItem value="email">E-mail</SelectItem>
-                        <SelectItem value="phone">Telefone</SelectItem>
-                        <SelectItem value="date">Data</SelectItem>
-                        <SelectItem value="boolean">Sim/Não</SelectItem>
-                        <SelectItem value="select">Lista de Opções</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Label>Tipo do Campo</Label>
+                    <div className="p-3 bg-muted rounded-md">
+                      <p className="text-sm text-muted-foreground">
+                        Campos personalizados são sempre do tipo <strong>Texto</strong>
+                      </p>
+                    </div>
                   </div>
                   <div className="flex items-center space-x-2">
                     <input
@@ -577,40 +476,6 @@ export default function FieldSettings() {
                   </div>
                 </div>
 
-                {editingField.type === 'select' && (
-                  <div>
-                    <Label>Opções da Lista</Label>
-                    <div className="space-y-2">
-                      <div className="flex gap-2">
-                        <Input
-                          value={newOption}
-                          onChange={(e) => setNewOption(e.target.value)}
-                          placeholder="Digite uma opção"
-                          onKeyPress={(e) => e.key === 'Enter' && addOption()}
-                        />
-                        <Button type="button" onClick={addOption} variant="outline">
-                          Adicionar
-                        </Button>
-                      </div>
-                      {editingField.options && editingField.options.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {editingField.options.map((option: string, index: number) => (
-                            <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                              {option}
-                              <button
-                                type="button"
-                                onClick={() => removeOption(index)}
-                                className="ml-1 hover:text-destructive"
-                              >
-                                ×
-                              </button>
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
 
                 <div>
                   <Label htmlFor="edit-field-description">Descrição</Label>

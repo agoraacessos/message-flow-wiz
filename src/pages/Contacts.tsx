@@ -10,17 +10,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Search, UserPlus, FileSpreadsheet, Edit, Trash2, CheckSquare, Square } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Check, ChevronsUpDown, Search, X, Plus } from "lucide-react";
+import { Upload, UserPlus, FileSpreadsheet, Edit, Trash2, CheckSquare, Square, Users } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ExcelUpload } from "@/components/ExcelUpload";
 import * as XLSX from 'xlsx';
 
 export default function Contacts() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [localContacts, setLocalContacts] = useState<any[]>([]);
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [editingContact, setEditingContact] = useState<any>(null);
@@ -33,11 +35,35 @@ export default function Contacts() {
     tags: [],
     company: '',
     position: '',
-    notes: ''
+    notes: '',
+    custom_fields: {}
   });
   const [isMappingDialogOpen, setIsMappingDialogOpen] = useState(false);
   const [mappingData, setMappingData] = useState<any>(null);
   const [fieldMapping, setFieldMapping] = useState<any>({});
+  const [openPopovers, setOpenPopovers] = useState<{ [key: number]: boolean }>({});
+  const [sortBy, setSortBy] = useState<"name" | "phone" | "created_at" | "tags">("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [tagFilter, setTagFilter] = useState<string>("all");
+  
+  // Estados para paginação
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(50);
+  
+  // Estados para edição em massa
+  const [isBulkEditDialogOpen, setIsBulkEditDialogOpen] = useState(false);
+  const [bulkEditData, setBulkEditData] = useState({
+    tags: [] as string[],
+    company: '',
+    position: '',
+    notes: ''
+  });
+  
+  // Estados para sistema de tags melhorado
+  const [newTag, setNewTag] = useState('');
+  const [allAvailableTags, setAllAvailableTags] = useState<string[]>([]);
+  const [openTagPopovers, setOpenTagPopovers] = useState<{ [key: string]: boolean }>({});
+  
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -55,7 +81,7 @@ export default function Contacts() {
         throw error;
       }
       
-      return data || [];
+      return (data || []) as any[];
     },
   });
 
@@ -72,26 +98,22 @@ export default function Contacts() {
     { id: 'system_notes', name: 'notes', label: 'Observações', type: 'text', required: false, description: 'Observações adicionais', isSystem: true },
   ];
 
-  // Buscar campos personalizados
+  // Buscar campos personalizados (temporariamente desabilitado até criar a tabela)
   const { data: customFields } = useQuery({
     queryKey: ["custom-fields"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('custom_fields')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Erro ao buscar campos personalizados:', error);
-        return [];
-      }
-      
-      return data || [];
+      // Temporariamente retornar array vazio até criar a tabela custom_fields
+      return [];
     },
   });
 
   // Combinar campos do sistema com campos personalizados
   const allFields = [...systemFields, ...(customFields || [])];
+
+  // Resetar paginação quando filtros mudarem
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, tagFilter, sortBy, sortOrder]);
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -209,24 +231,150 @@ export default function Contacts() {
     });
   };
 
+  const getFieldLabel = (fieldName: string) => {
+    if (fieldName === 'none') return '-- Não mapear --';
+    const field = allFields?.find(f => f.name === fieldName);
+    return field ? `${field.label}${field.isSystem ? ' (Sistema)' : ''}` : fieldName;
+  };
+
+  const togglePopover = (index: number) => {
+    setOpenPopovers(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
+
+  // Lógica de filtros e ordenação
+  const filteredAndSortedContacts = contacts ? contacts
+    .filter((contact) => {
+      // Filtro por termo de busca
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        return (
+          contact.name?.toLowerCase().includes(searchLower) ||
+          contact.phone?.toLowerCase().includes(searchLower) ||
+          contact.email?.toLowerCase().includes(searchLower) ||
+          contact.company?.toLowerCase().includes(searchLower) ||
+          contact.tags?.some((tag: any) => String(tag).toLowerCase().includes(searchLower))
+        );
+      }
+      return true;
+    })
+    .filter((contact) => {
+      // Filtro por tag (comparação exata)
+      if (tagFilter && tagFilter !== "all") {
+        return contact.tags?.some((tag: any) => 
+          String(tag).toLowerCase() === tagFilter.toLowerCase()
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      let aValue: any, bValue: any;
+      
+      switch (sortBy) {
+        case "name":
+          aValue = (a.name || "").toLowerCase();
+          bValue = (b.name || "").toLowerCase();
+          break;
+        case "phone":
+          aValue = (a.phone || "").toLowerCase();
+          bValue = (b.phone || "").toLowerCase();
+          break;
+        case "created_at":
+          aValue = new Date(a.created_at);
+          bValue = new Date(b.created_at);
+          break;
+        case "tags":
+          aValue = (a.tags?.join(", ") || "").toLowerCase();
+          bValue = (b.tags?.join(", ") || "").toLowerCase();
+          break;
+        default:
+          aValue = (a.name || "").toLowerCase();
+          bValue = (b.name || "").toLowerCase();
+      }
+      
+      if (sortOrder === "asc") {
+        // Para strings, usar localeCompare para ordenação alfabética correta
+        if (typeof aValue === "string" && typeof bValue === "string") {
+          return aValue.localeCompare(bValue, 'pt-BR');
+        }
+        return aValue > bValue ? 1 : -1;
+      } else {
+        // Para strings, usar localeCompare para ordenação alfabética correta
+        if (typeof aValue === "string" && typeof bValue === "string") {
+          return bValue.localeCompare(aValue, 'pt-BR');
+        }
+        return aValue < bValue ? 1 : -1;
+      }
+    }) : [];
+
+  // Paginação no frontend
+  const totalFilteredContacts = filteredAndSortedContacts.length;
+  const displayedContacts = filteredAndSortedContacts.slice(0, currentPage * itemsPerPage);
+  const hasMoreToShow = displayedContacts.length < totalFilteredContacts;
+
+  // Obter todas as tags únicas para o filtro
+  const allTags = contacts ? Array.from(new Set(
+    contacts.flatMap(contact => contact.tags || [])
+  )).sort() : [];
+
+  // Atualizar tags disponíveis quando contatos mudarem
+  React.useEffect(() => {
+    if (contacts) {
+      const uniqueTags = Array.from(new Set(
+        contacts.flatMap(contact => contact.tags || [])
+      )).sort();
+      setAllAvailableTags(uniqueTags);
+    }
+  }, [contacts]);
+
   const processMappedData = async () => {
     if (!mappingData) return;
 
+    // Lista de campos válidos que existem na tabela contacts
+    const validFields = ['name', 'phone', 'phone2', 'phone3', 'email', 'tags', 'company', 'position', 'notes'];
+    
+    // Adicionar campos personalizados à lista de campos válidos
+    const allValidFields = [...validFields];
+    if (allFields && allFields.length > 0) {
+      allFields.forEach(field => {
+        if (!allValidFields.includes(field.name)) {
+          allValidFields.push(field.name);
+        }
+      });
+    }
+
     const processedContacts = mappingData.rows.map((row: any[], index: number) => {
       const contact: any = {};
+      const customFields: any = {};
       
       Object.entries(fieldMapping).forEach(([columnIndex, systemField]) => {
-        const value = row[parseInt(columnIndex as string)];
-        if (value !== undefined && value !== null && value !== '') {
-          if (systemField === 'tags') {
-            contact[systemField] = typeof value === 'string' 
-              ? value.split(';').map((t: string) => t.trim()).filter(Boolean)
-              : [];
-          } else {
-            contact[systemField] = value;
+        // Só processar se o campo for válido
+        if (allValidFields.includes(systemField as string)) {
+          const value = row[parseInt(columnIndex as string)];
+          if (value !== undefined && value !== null && value !== '') {
+            // Verificar se é um campo do sistema
+            if (validFields.includes(systemField as string)) {
+              if (systemField === 'tags') {
+                contact[systemField] = typeof value === 'string' 
+                  ? value.split(';').map((t: string) => t.trim()).filter(Boolean)
+                  : [];
+              } else {
+                contact[systemField as string] = value;
+              }
+            } else {
+              // É um campo personalizado, adicionar ao custom_fields
+              customFields[systemField as string] = value;
+            }
           }
         }
       });
+
+      // Adicionar campos personalizados se existirem
+      if (Object.keys(customFields).length > 0) {
+        contact.custom_fields = customFields;
+      }
 
       return contact;
     }).filter(contact => contact.name && contact.phone);
@@ -271,10 +419,10 @@ export default function Contacts() {
   };
 
   const handleSelectAll = () => {
-    if (selectedContacts.size === filteredContacts?.length) {
+    if (selectedContacts.size === filteredAndSortedContacts?.length) {
       setSelectedContacts(new Set());
     } else {
-      setSelectedContacts(new Set(filteredContacts?.map(c => c.id) || []));
+      setSelectedContacts(new Set(filteredAndSortedContacts?.map(c => c.id) || []));
     }
   };
 
@@ -296,13 +444,24 @@ export default function Contacts() {
       return;
     }
 
+    const updateData: any = {
+      name: editingContact.name,
+      phone: editingContact.phone,
+      email: editingContact.email || null,
+      tags: editingContact.tags || [],
+      company: editingContact.company || null,
+      position: editingContact.position || null,
+      notes: editingContact.notes || null
+    };
+
+    // Adicionar campos personalizados se existirem
+    if (editingContact.custom_fields && Object.keys(editingContact.custom_fields).length > 0) {
+      updateData.custom_fields = editingContact.custom_fields;
+    }
+
     const { error } = await supabase
       .from('contacts')
-      .update({
-        name: editingContact.name,
-        phone: editingContact.phone,
-        tags: editingContact.tags || []
-      })
+      .update(updateData)
       .eq('id', editingContact.id);
     
     if (error) {
@@ -402,6 +561,211 @@ export default function Contacts() {
     }
   };
 
+  // Funções para edição em massa
+  const handleBulkEdit = () => {
+    if (selectedContacts.size === 0) {
+      toast({
+        title: "Erro",
+        description: "Selecione pelo menos um contato para editar.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Carregar tags atuais dos contatos selecionados
+    const selectedContactsData = contacts?.filter(contact => selectedContacts.has(contact.id)) || [];
+    const allCurrentTags = selectedContactsData.flatMap(contact => contact.tags || []);
+    const uniqueCurrentTags = Array.from(new Set(allCurrentTags));
+
+    // Inicializar dados do bulk edit com tags atuais
+    setBulkEditData({
+      tags: uniqueCurrentTags,
+      company: '',
+      position: '',
+      notes: ''
+    });
+
+    setIsBulkEditDialogOpen(true);
+  };
+
+  const handleBulkEditSave = async () => {
+    const contactIds = Array.from(selectedContacts);
+    
+    try {
+      // Verificar se há campos para atualizar
+      const hasTags = bulkEditData.tags.length > 0;
+      const hasCompany = bulkEditData.company.trim();
+      const hasPosition = bulkEditData.position.trim();
+      const hasNotes = bulkEditData.notes.trim();
+
+      if (!hasTags && !hasCompany && !hasPosition && !hasNotes) {
+        toast({
+          title: "Erro",
+          description: "Preencha pelo menos um campo para atualizar.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Atualizar cada contato individualmente para tratar tags corretamente
+      let updatedCount = 0;
+      
+      for (const contactId of contactIds) {
+        const contact = contacts?.find(c => c.id === contactId);
+        if (!contact) continue;
+
+        const updateData: any = {};
+        
+        // Para tags, adicionar às existentes ao invés de substituir
+        if (hasTags) {
+          const currentTags = contact.tags || [];
+          const newTags = bulkEditData.tags.filter(tag => !currentTags.includes(tag));
+          updateData.tags = [...currentTags, ...newTags];
+        }
+        
+        // Para outros campos, só atualizar se preenchidos
+        if (hasCompany) {
+          updateData.company = bulkEditData.company;
+        }
+        if (hasPosition) {
+          updateData.position = bulkEditData.position;
+        }
+        if (hasNotes) {
+          updateData.notes = bulkEditData.notes;
+        }
+
+        const { error } = await supabase
+          .from('contacts')
+          .update(updateData)
+          .eq('id', contactId);
+        
+        if (error) {
+          console.error('Erro ao atualizar contato:', error);
+          toast({
+            title: "Erro",
+            description: `Erro ao atualizar contato ${contact.name}. ${updatedCount} foram atualizados antes do erro.`,
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        updatedCount++;
+      }
+      
+      setSelectedContacts(new Set());
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      
+      // Resetar dados do bulk edit
+      setBulkEditData({
+        tags: [],
+        company: '',
+        position: '',
+        notes: ''
+      });
+      
+      setIsBulkEditDialogOpen(false);
+      
+      toast({
+        title: "Sucesso!",
+        description: `${updatedCount} contatos atualizados com sucesso.`,
+      });
+      
+    } catch (error) {
+      console.error('Erro geral ao atualizar contatos:', error);
+      toast({
+        title: "Erro",
+        description: "Erro inesperado ao atualizar contatos.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Funções para sistema de tags melhorado
+  const addTagToBulkEdit = (tag: string) => {
+    if (tag.trim() && !bulkEditData.tags.includes(tag.trim())) {
+      setBulkEditData(prev => ({
+        ...prev,
+        tags: [...prev.tags, tag.trim()]
+      }));
+    }
+  };
+
+  const removeTagFromBulkEdit = (tagToRemove: string) => {
+    setBulkEditData(prev => ({
+      ...prev,
+      tags: prev.tags.filter(tag => tag !== tagToRemove)
+    }));
+  };
+
+  const addNewTagToBulkEdit = () => {
+    if (newTag.trim() && !bulkEditData.tags.includes(newTag.trim())) {
+      setBulkEditData(prev => ({
+        ...prev,
+        tags: [...prev.tags, newTag.trim()]
+      }));
+      setNewTag('');
+    }
+  };
+
+  const addTagToContact = (contactId: string, tag: string) => {
+    if (tag.trim()) {
+      const contact = contacts?.find(c => c.id === contactId);
+      if (contact && !contact.tags?.includes(tag.trim())) {
+        const updatedTags = [...(contact.tags || []), tag.trim()];
+        updateContactTags(contactId, updatedTags);
+      }
+    }
+  };
+
+  const removeTagFromContact = (contactId: string, tagToRemove: string) => {
+    const contact = contacts?.find(c => c.id === contactId);
+    if (contact) {
+      const updatedTags = contact.tags?.filter(tag => tag !== tagToRemove) || [];
+      updateContactTags(contactId, updatedTags);
+    }
+  };
+
+  const updateContactTags = async (contactId: string, tags: string[]) => {
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ tags })
+        .eq('id', contactId);
+      
+      if (error) {
+        console.error('Erro ao atualizar tags do contato:', error);
+        toast({
+          title: "Erro",
+          description: "Erro ao atualizar tags do contato.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      
+    } catch (error) {
+      console.error('Erro ao atualizar tags:', error);
+      toast({
+        title: "Erro",
+        description: "Erro inesperado ao atualizar tags.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const toggleTagPopover = (contactId: string) => {
+    setOpenTagPopovers(prev => ({
+      ...prev,
+      [contactId]: !prev[contactId]
+    }));
+  };
+
+  // Função para carregar mais contatos
+  const handleLoadMore = () => {
+    setCurrentPage(prev => prev + 1);
+  };
+
   // Função para adicionar novo contato
   const handleAddContact = async () => {
     if (!newContact.name || !newContact.phone) {
@@ -416,9 +780,14 @@ export default function Contacts() {
     const contact = {
       name: newContact.name,
       phone: newContact.phone,
+      email: newContact.email || null,
       tags: typeof newContact.tags === 'string' 
         ? newContact.tags.split(';').map((t: string) => t.trim()).filter(Boolean)
-        : newContact.tags || []
+        : newContact.tags || [],
+      company: newContact.company || null,
+      position: newContact.position || null,
+      notes: newContact.notes || null,
+      custom_fields: newContact.custom_fields || {}
     };
 
     const { error } = await supabase
@@ -445,7 +814,8 @@ export default function Contacts() {
       tags: [],
       company: '',
       position: '',
-      notes: ''
+      notes: '',
+      custom_fields: {}
     });
     
     setIsAddDialogOpen(false);
@@ -491,44 +861,56 @@ export default function Contacts() {
         
         // Mapeamento automático baseado nos cabeçalhos
         const autoMapping: { [key: string]: string } = {};
+        const validFields = ['name', 'phone', 'phone2', 'phone3', 'email', 'tags', 'company', 'position', 'notes'];
+        const usedFields = new Set<string>();
         
         let phoneCount = 0;
         firstRow.forEach((header, index) => {
           const headerLower = header.toLowerCase();
           
           if (headerLower.includes('nome') || headerLower.includes('name')) {
-            autoMapping[index] = 'name';
+            if (!usedFields.has('name')) {
+              autoMapping[index] = 'name';
+              usedFields.add('name');
+            }
           } else if (headerLower.includes('telefone') || headerLower.includes('phone') || headerLower.includes('celular')) {
-            if (phoneCount === 0) {
+            if (phoneCount === 0 && !usedFields.has('phone')) {
               autoMapping[index] = 'phone';
+              usedFields.add('phone');
               phoneCount++;
-            } else if (phoneCount === 1) {
+            } else if (phoneCount === 1 && !usedFields.has('phone2')) {
               autoMapping[index] = 'phone2';
+              usedFields.add('phone2');
               phoneCount++;
-            } else if (phoneCount === 2) {
+            } else if (phoneCount === 2 && !usedFields.has('phone3')) {
               autoMapping[index] = 'phone3';
+              usedFields.add('phone3');
               phoneCount++;
             }
           } else if (headerLower.includes('email') || headerLower.includes('e-mail')) {
-            autoMapping[index] = 'email';
+            if (!usedFields.has('email')) {
+              autoMapping[index] = 'email';
+              usedFields.add('email');
+            }
           } else if (headerLower.includes('tag') || headerLower.includes('etiqueta') || headerLower.includes('categoria')) {
-            autoMapping[index] = 'tags';
+            if (!usedFields.has('tags')) {
+              autoMapping[index] = 'tags';
+              usedFields.add('tags');
+            }
           } else if (headerLower.includes('empresa') || headerLower.includes('company')) {
-            autoMapping[index] = 'company';
+            if (!usedFields.has('company')) {
+              autoMapping[index] = 'company';
+              usedFields.add('company');
+            }
           } else if (headerLower.includes('cargo') || headerLower.includes('position')) {
-            autoMapping[index] = 'position';
+            if (!usedFields.has('position')) {
+              autoMapping[index] = 'position';
+              usedFields.add('position');
+            }
           } else if (headerLower.includes('observação') || headerLower.includes('note') || headerLower.includes('comentário')) {
-            autoMapping[index] = 'notes';
-          } else {
-            // Tentar mapear com todos os campos disponíveis
-            if (allFields) {
-              const matchingField = allFields.find(field => 
-                headerLower.includes(field.name.toLowerCase()) || 
-                headerLower.includes(field.label.toLowerCase())
-              );
-              if (matchingField) {
-                autoMapping[index] = matchingField.name;
-              }
+            if (!usedFields.has('notes')) {
+              autoMapping[index] = 'notes';
+              usedFields.add('notes');
             }
           }
         });
@@ -608,43 +990,55 @@ export default function Contacts() {
 
             // Mapeamento automático baseado nos nomes das colunas
             const autoMapping: { [key: string]: string } = {};
+            const validFields = ['name', 'phone', 'phone2', 'phone3', 'email', 'tags', 'company', 'position', 'notes'];
+            const usedFields = new Set<string>();
             
             let phoneCount = 0;
             headers.forEach(header => {
               const headerLower = header.toLowerCase();
               if (headerLower.includes('nome') || headerLower.includes('name')) {
-                autoMapping[header] = 'name';
+                if (!usedFields.has('name')) {
+                  autoMapping[header] = 'name';
+                  usedFields.add('name');
+                }
               } else if (headerLower.includes('telefone') || headerLower.includes('phone') || headerLower.includes('celular')) {
-                if (phoneCount === 0) {
+                if (phoneCount === 0 && !usedFields.has('phone')) {
                   autoMapping[header] = 'phone';
+                  usedFields.add('phone');
                   phoneCount++;
-                } else if (phoneCount === 1) {
+                } else if (phoneCount === 1 && !usedFields.has('phone2')) {
                   autoMapping[header] = 'phone2';
+                  usedFields.add('phone2');
                   phoneCount++;
-                } else if (phoneCount === 2) {
+                } else if (phoneCount === 2 && !usedFields.has('phone3')) {
                   autoMapping[header] = 'phone3';
+                  usedFields.add('phone3');
                   phoneCount++;
                 }
               } else if (headerLower.includes('email') || headerLower.includes('e-mail')) {
-                autoMapping[header] = 'email';
+                if (!usedFields.has('email')) {
+                  autoMapping[header] = 'email';
+                  usedFields.add('email');
+                }
               } else if (headerLower.includes('tag') || headerLower.includes('etiqueta') || headerLower.includes('categoria')) {
-                autoMapping[header] = 'tags';
+                if (!usedFields.has('tags')) {
+                  autoMapping[header] = 'tags';
+                  usedFields.add('tags');
+                }
               } else if (headerLower.includes('empresa') || headerLower.includes('company')) {
-                autoMapping[header] = 'company';
+                if (!usedFields.has('company')) {
+                  autoMapping[header] = 'company';
+                  usedFields.add('company');
+                }
               } else if (headerLower.includes('cargo') || headerLower.includes('position')) {
-                autoMapping[header] = 'position';
+                if (!usedFields.has('position')) {
+                  autoMapping[header] = 'position';
+                  usedFields.add('position');
+                }
               } else if (headerLower.includes('observação') || headerLower.includes('note') || headerLower.includes('comentário')) {
-                autoMapping[header] = 'notes';
-              } else {
-                // Tentar mapear com todos os campos disponíveis
-                if (allFields) {
-                  const matchingField = allFields.find(field => 
-                    headerLower.includes(field.name.toLowerCase()) || 
-                    headerLower.includes(field.label.toLowerCase())
-                  );
-                  if (matchingField) {
-                    autoMapping[header] = matchingField.name;
-                  }
+                if (!usedFields.has('notes')) {
+                  autoMapping[header] = 'notes';
+                  usedFields.add('notes');
                 }
               }
             });
@@ -708,16 +1102,7 @@ export default function Contacts() {
     }
   };
 
-  const allTags = Array.from(
-    new Set(contacts?.flatMap((c) => c.tags || []))
-  ).filter(Boolean);
-
-  const filteredContacts = contacts?.filter((contact) => {
-    const matchesSearch = (contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (contact.phone?.includes(searchTerm) || false);
-    const matchesTag = !selectedTag || contact.tags?.includes(selectedTag);
-    return matchesSearch && matchesTag;
-  });
+  // Remover lógica antiga - agora usando filteredAndSortedContacts
 
   return (
     <Layout>
@@ -733,7 +1118,77 @@ export default function Contacts() {
             <UserPlus className="h-4 w-4" />
             Adicionar Contato
           </Button>
-        </div>
+              </div>
+
+        {/* Controles de Filtro e Ordenação */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Busca */}
+              <div className="space-y-2">
+                <Label htmlFor="search">Buscar</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                    id="search"
+                    placeholder="Nome, telefone, email..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+
+              {/* Filtro por Tag */}
+              <div className="space-y-2">
+                <Label htmlFor="tag-filter">Filtrar por Tag</Label>
+                <Select value={tagFilter} onValueChange={setTagFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas as tags" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as tags</SelectItem>
+                    {allTags.map((tag) => (
+                      <SelectItem key={tag} value={tag}>
+                        {tag}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Ordenar por */}
+              <div className="space-y-2">
+                <Label htmlFor="sort-by">Ordenar por</Label>
+                <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="created_at">Data de Inclusão</SelectItem>
+                    <SelectItem value="name">Nome (A-Z)</SelectItem>
+                    <SelectItem value="phone">Telefone</SelectItem>
+                    <SelectItem value="tags">Tags</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Ordem */}
+              <div className="space-y-2">
+                <Label htmlFor="sort-order">Ordem</Label>
+                <Select value={sortOrder} onValueChange={(value: any) => setSortOrder(value)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="desc">Decrescente</SelectItem>
+                    <SelectItem value="asc">Crescente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <Tabs defaultValue="list" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
@@ -763,81 +1218,65 @@ export default function Contacts() {
                       <div className="flex h-12 items-center gap-3 rounded-lg bg-primary px-6 text-base font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors">
                         <Upload className="h-5 w-5" />
                         {uploadMutation.isPending || excelUploadMutation.isPending ? 'Processando...' : 'Selecionar Arquivo'}
-                      </div>
-                      <Input
+              </div>
+              <Input
                         id="smart-file-upload"
-                        type="file"
+                type="file"
                         accept=".csv,.xlsx,.xls"
-                        className="hidden"
+                className="hidden"
                         onChange={handleSmartFileUpload}
                         disabled={uploadMutation.isPending || excelUploadMutation.isPending}
-                      />
-                    </Label>
+              />
+            </Label>
                     
                     <div className="text-xs text-muted-foreground space-y-1">
                       <p><strong>Formatos suportados:</strong> CSV, Excel (.xlsx/.xls)</p>
                       <p><strong>Mapeamento automático:</strong> nome, telefone, email, tags, empresa, cargo, observações</p>
-                    </div>
-                  </div>
+          </div>
+        </div>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="list" className="space-y-6">
-            <Card className="shadow-[var(--shadow-elegant)]">
-              <CardHeader>
-                <CardTitle>Buscar e Filtrar</CardTitle>
-                <CardDescription>
-                  Encontre contatos por nome, telefone ou tag
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar por nome ou telefone..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
+        <Card className="shadow-[var(--shadow-elegant)]">
+          <CardHeader>
+            <CardTitle>Buscar e Filtrar</CardTitle>
+            <CardDescription>
+              Encontre contatos por nome, telefone ou tag
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nome ou telefone..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
                 </div>
-                
-                <div className="flex flex-wrap gap-2">
-                  <Badge
-                    variant={selectedTag === null ? "default" : "outline"}
-                    className="cursor-pointer"
-                    onClick={() => setSelectedTag(null)}
-                  >
-                    Todas
-                  </Badge>
-                  {allTags.map((tag) => (
-                    <Badge
-                      key={tag}
-                      variant={selectedTag === tag ? "default" : "outline"}
-                      className="cursor-pointer"
-                      onClick={() => setSelectedTag(tag)}
-                    >
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-            <Card className="shadow-[var(--shadow-elegant)]">
-              <CardHeader>
+        <Card className="shadow-[var(--shadow-elegant)]">
+          <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Lista de Contatos ({filteredContacts?.length || 0})</CardTitle>
+                  <CardTitle>Lista de Contatos ({totalFilteredContacts || 0})</CardTitle>
                   {selectedContacts.size > 0 && (
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-muted-foreground">
                         {selectedContacts.size} selecionado(s)
                       </span>
+                      <Button variant="outline" size="sm" onClick={handleBulkEdit}>
+                        <Users className="h-4 w-4 mr-2" />
+                        Editar em Massa
+                      </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="destructive" size="sm">
@@ -864,49 +1303,133 @@ export default function Contacts() {
                     </div>
                   )}
                 </div>
-              </CardHeader>
-              <CardContent>
-                {isLoading ? (
-                  <p className="text-center text-muted-foreground">Carregando...</p>
-                ) : filteredContacts && filteredContacts.length > 0 ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <p className="text-center text-muted-foreground">Carregando...</p>
+                ) : displayedContacts && displayedContacts.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
                         <TableHead className="w-12">
                           <Checkbox
-                            checked={selectedContacts.size === filteredContacts.length && filteredContacts.length > 0}
+                            checked={selectedContacts.size === displayedContacts.length && displayedContacts.length > 0}
                             onCheckedChange={handleSelectAll}
                           />
                         </TableHead>
-                        <TableHead>Nome</TableHead>
-                        <TableHead>Telefone</TableHead>
-                        <TableHead>Tags</TableHead>
-                        <TableHead>Cadastrado em</TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Telefone</TableHead>
+                    <TableHead>Tags</TableHead>
+                    <TableHead>Campos Personalizados</TableHead>
+                    <TableHead>Cadastrado em</TableHead>
                         <TableHead className="w-24">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredContacts.map((contact) => (
-                        <TableRow key={contact.id}>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                      {displayedContacts.map((contact) => (
+                    <TableRow key={contact.id}>
                           <TableCell>
                             <Checkbox
                               checked={selectedContacts.has(contact.id)}
                               onCheckedChange={() => handleSelectContact(contact.id)}
                             />
                           </TableCell>
-                          <TableCell className="font-medium">{contact.name}</TableCell>
-                          <TableCell>{contact.phone}</TableCell>
+                      <TableCell className="font-medium">{contact.name}</TableCell>
+                      <TableCell>{contact.phone}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {contact.tags?.map((tag) => (
+                            <Badge 
+                              key={tag} 
+                              variant="secondary" 
+                              className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                              onClick={() => removeTagFromContact(contact.id, tag)}
+                              title="Clique para remover"
+                            >
+                              {tag}
+                              <X className="h-3 w-3 ml-1" />
+                            </Badge>
+                          ))}
+                          <Popover open={openTagPopovers[contact.id]} onOpenChange={() => toggleTagPopover(contact.id)}>
+                            <PopoverTrigger asChild>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                className="h-6 w-6 p-0 cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                                title="Adicionar tag"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-64">
+                              <div className="space-y-2">
+                                <Label className="text-sm font-medium">Adicionar Tag</Label>
+                                <div className="flex gap-2">
+                                  <Input
+                                    placeholder="Nova tag"
+                                    value={newTag}
+                                    onChange={(e) => setNewTag(e.target.value)}
+                                    onKeyPress={(e) => {
+                                      if (e.key === 'Enter') {
+                                        addTagToContact(contact.id, newTag);
+                                        setNewTag('');
+                                        toggleTagPopover(contact.id);
+                                      }
+                                    }}
+                                  />
+                                  <Button 
+                                    size="sm" 
+                                    onClick={() => {
+                                      addTagToContact(contact.id, newTag);
+                                      setNewTag('');
+                                      toggleTagPopover(contact.id);
+                                    }}
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                                {allAvailableTags.length > 0 && (
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">Tags existentes:</Label>
+                                    <div className="flex flex-wrap gap-1">
+                                      {allAvailableTags
+                                        .filter(tag => !contact.tags?.includes(tag))
+                                        .map((tag) => (
+                                          <Badge
+                                            key={tag}
+                                            variant="outline"
+                                            className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors text-xs"
+                                            onClick={() => {
+                                              addTagToContact(contact.id, tag);
+                                              toggleTagPopover(contact.id);
+                                            }}
+                                          >
+                                            {tag}
+                                          </Badge>
+                                        ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </TableCell>
                           <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {contact.tags?.map((tag) => (
-                                <Badge key={tag} variant="secondary">
-                                  {tag}
-                                </Badge>
-                              ))}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {new Date(contact.created_at).toLocaleDateString("pt-BR")}
+                            {contact.custom_fields && Object.keys(contact.custom_fields).length > 0 ? (
+                              <div className="space-y-1">
+                                {Object.entries(contact.custom_fields).map(([key, value]) => (
+                                  <div key={key} className="text-xs">
+                                    <span className="font-medium text-muted-foreground">{key}:</span> {String(value)}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">Nenhum</span>
+                            )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(contact.created_at).toLocaleDateString("pt-BR")}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
@@ -940,25 +1463,38 @@ export default function Contacts() {
                                 </AlertDialogContent>
                               </AlertDialog>
                             </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <UserPlus className="mb-4 h-12 w-12 text-muted-foreground" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <UserPlus className="mb-4 h-12 w-12 text-muted-foreground" />
                     <h3 className="text-lg font-semibold">Nenhum contato cadastrado</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">
+                <p className="mt-2 text-sm text-muted-foreground">
                       Importe um arquivo CSV ou Excel para começar
-                    </p>
-                    <p className="mt-4 text-xs text-muted-foreground">
+                </p>
+                <p className="mt-4 text-xs text-muted-foreground">
                       CSV: nome,telefone,tag1;tag2;tag3 | Excel: mapeamento personalizado
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                </p>
+              </div>
+            )}
+          </CardContent>
+          
+          {/* Botão Ver Mais */}
+          {hasMoreToShow && displayedContacts && displayedContacts.length > 0 && (
+            <div className="flex justify-center mt-6 pb-6">
+              <Button 
+                onClick={handleLoadMore}
+                variant="outline"
+                className="w-full max-w-xs"
+              >
+                Ver Mais Contatos
+              </Button>
+            </div>
+          )}
+        </Card>
           </TabsContent>
         </Tabs>
 
@@ -986,38 +1522,191 @@ export default function Contacts() {
                       </div>
                       
                       <div className="flex-1">
-                        <Select
-                          value={fieldMapping[index] || 'none'}
-                          onValueChange={(value) => handleFieldMappingChange(index, value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione o campo do sistema" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">-- Não mapear --</SelectItem>
-                            <SelectItem value="name">Nome</SelectItem>
-                            <SelectItem value="phone">Telefone</SelectItem>
-                            <SelectItem value="phone2">Telefone 2</SelectItem>
-                            <SelectItem value="phone3">Telefone 3</SelectItem>
-                            <SelectItem value="email">E-mail</SelectItem>
-                            <SelectItem value="tags">Tags</SelectItem>
-                            <SelectItem value="company">Empresa</SelectItem>
-                            <SelectItem value="position">Cargo</SelectItem>
-                            <SelectItem value="notes">Observações</SelectItem>
-                            {allFields && allFields.length > 0 && (
-                              <>
-                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                                  Todos os Campos
-                                </div>
-                                {allFields.map((field) => (
-                                  <SelectItem key={field.id} value={field.name}>
-                                    {field.label} {field.isSystem && '(Sistema)'}
-                                  </SelectItem>
-                                ))}
-                              </>
-                            )}
-                          </SelectContent>
-                        </Select>
+                        <Popover open={openPopovers[index]} onOpenChange={() => togglePopover(index)}>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={openPopovers[index]}
+                              className="w-full justify-between"
+                            >
+                              {getFieldLabel(fieldMapping[index] || 'none')}
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-full p-0">
+                            <Command>
+                              <CommandInput placeholder="Buscar campo..." />
+                              <CommandList>
+                                <CommandEmpty>Nenhum campo encontrado.</CommandEmpty>
+                                <CommandGroup>
+                                  <CommandItem
+                                    value="none"
+                                    onSelect={() => {
+                                      handleFieldMappingChange(index, 'none');
+                                      togglePopover(index);
+                                    }}
+                                  >
+                                    <Check
+                                      className={`mr-2 h-4 w-4 ${
+                                        (fieldMapping[index] || 'none') === 'none' ? 'opacity-100' : 'opacity-0'
+                                      }`}
+                                    />
+                                    -- Não mapear --
+                                  </CommandItem>
+                                  {allFields && allFields.length > 0 ? (
+                                    allFields.map((field) => (
+                                      <CommandItem
+                                        key={field.id}
+                                        value={field.name}
+                                        onSelect={() => {
+                                          handleFieldMappingChange(index, field.name);
+                                          togglePopover(index);
+                                        }}
+                                      >
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            fieldMapping[index] === field.name ? 'opacity-100' : 'opacity-0'
+                                          }`}
+                                        />
+                                        {field.label} {field.isSystem && '(Sistema)'}
+                                      </CommandItem>
+                                    ))
+                                  ) : (
+                                    <>
+                                      <CommandItem
+                                        value="name"
+                                        onSelect={() => {
+                                          handleFieldMappingChange(index, 'name');
+                                          togglePopover(index);
+                                        }}
+                                      >
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            fieldMapping[index] === 'name' ? 'opacity-100' : 'opacity-0'
+                                          }`}
+                                        />
+                                        Nome
+                                      </CommandItem>
+                                      <CommandItem
+                                        value="phone"
+                                        onSelect={() => {
+                                          handleFieldMappingChange(index, 'phone');
+                                          togglePopover(index);
+                                        }}
+                                      >
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            fieldMapping[index] === 'phone' ? 'opacity-100' : 'opacity-0'
+                                          }`}
+                                        />
+                                        Telefone
+                                      </CommandItem>
+                                      <CommandItem
+                                        value="phone2"
+                                        onSelect={() => {
+                                          handleFieldMappingChange(index, 'phone2');
+                                          togglePopover(index);
+                                        }}
+                                      >
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            fieldMapping[index] === 'phone2' ? 'opacity-100' : 'opacity-0'
+                                          }`}
+                                        />
+                                        Telefone 2
+                                      </CommandItem>
+                                      <CommandItem
+                                        value="phone3"
+                                        onSelect={() => {
+                                          handleFieldMappingChange(index, 'phone3');
+                                          togglePopover(index);
+                                        }}
+                                      >
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            fieldMapping[index] === 'phone3' ? 'opacity-100' : 'opacity-0'
+                                          }`}
+                                        />
+                                        Telefone 3
+                                      </CommandItem>
+                                      <CommandItem
+                                        value="email"
+                                        onSelect={() => {
+                                          handleFieldMappingChange(index, 'email');
+                                          togglePopover(index);
+                                        }}
+                                      >
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            fieldMapping[index] === 'email' ? 'opacity-100' : 'opacity-0'
+                                          }`}
+                                        />
+                                        E-mail
+                                      </CommandItem>
+                                      <CommandItem
+                                        value="tags"
+                                        onSelect={() => {
+                                          handleFieldMappingChange(index, 'tags');
+                                          togglePopover(index);
+                                        }}
+                                      >
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            fieldMapping[index] === 'tags' ? 'opacity-100' : 'opacity-0'
+                                          }`}
+                                        />
+                                        Tags
+                                      </CommandItem>
+                                      <CommandItem
+                                        value="company"
+                                        onSelect={() => {
+                                          handleFieldMappingChange(index, 'company');
+                                          togglePopover(index);
+                                        }}
+                                      >
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            fieldMapping[index] === 'company' ? 'opacity-100' : 'opacity-0'
+                                          }`}
+                                        />
+                                        Empresa
+                                      </CommandItem>
+                                      <CommandItem
+                                        value="position"
+                                        onSelect={() => {
+                                          handleFieldMappingChange(index, 'position');
+                                          togglePopover(index);
+                                        }}
+                                      >
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            fieldMapping[index] === 'position' ? 'opacity-100' : 'opacity-0'
+                                          }`}
+                                        />
+                                        Cargo
+                                      </CommandItem>
+                                      <CommandItem
+                                        value="notes"
+                                        onSelect={() => {
+                                          handleFieldMappingChange(index, 'notes');
+                                          togglePopover(index);
+                                        }}
+                                      >
+                                        <Check
+                                          className={`mr-2 h-4 w-4 ${
+                                            fieldMapping[index] === 'notes' ? 'opacity-100' : 'opacity-0'
+                                          }`}
+                                        />
+                                        Observações
+                                      </CommandItem>
+                                    </>
+                                  )}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
                       </div>
                     </div>
                   ))}
@@ -1098,16 +1787,107 @@ export default function Contacts() {
                 />
               </div>
               <div>
-                <Label htmlFor="add-tags">Tags (separadas por ponto e vírgula)</Label>
-                <Input
-                  id="add-tags"
-                  value={Array.isArray(newContact.tags) ? newContact.tags.join(';') : newContact.tags || ''}
-                  onChange={(e) => setNewContact({
-                    ...newContact,
-                    tags: e.target.value
-                  })}
-                  placeholder="cliente;vip;prospecto"
-                />
+                <Label>Tags</Label>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {newContact.tags?.map((tag: string) => (
+                      <Badge 
+                        key={tag} 
+                        variant="secondary" 
+                        className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                        onClick={() => {
+                          const updatedTags = newContact.tags?.filter((t: string) => t !== tag) || [];
+                          setNewContact({
+                            ...newContact,
+                            tags: updatedTags
+                          });
+                        }}
+                        title="Clique para remover"
+                      >
+                        {tag}
+                        <X className="h-3 w-3 ml-1" />
+                      </Badge>
+                    ))}
+                    <Popover open={openTagPopovers['add-new']} onOpenChange={() => toggleTagPopover('add-new')}>
+                      <PopoverTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          className="h-6 w-6 p-0 cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                          title="Adicionar tag"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Adicionar Tag</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Nova tag"
+                              value={newTag}
+                              onChange={(e) => setNewTag(e.target.value)}
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  if (newTag.trim() && !newContact.tags?.includes(newTag.trim())) {
+                                    setNewContact({
+                                      ...newContact,
+                                      tags: [...(newContact.tags || []), newTag.trim()]
+                                    });
+                                  }
+                                  setNewTag('');
+                                  toggleTagPopover('add-new');
+                                }
+                              }}
+                            />
+                            <Button 
+                              size="sm" 
+                              onClick={() => {
+                                if (newTag.trim() && !newContact.tags?.includes(newTag.trim())) {
+                                  setNewContact({
+                                    ...newContact,
+                                    tags: [...(newContact.tags || []), newTag.trim()]
+                                  });
+                                }
+                                setNewTag('');
+                                toggleTagPopover('add-new');
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          {allAvailableTags.length > 0 && (
+                            <div className="space-y-1">
+                              <Label className="text-xs text-muted-foreground">Tags existentes:</Label>
+                              <div className="flex flex-wrap gap-1">
+                                {allAvailableTags
+                                  .filter(tag => !newContact.tags?.includes(tag))
+                                  .map((tag) => (
+                                    <Badge
+                                      key={tag}
+                                      variant="outline"
+                                      className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors text-xs"
+                                      onClick={() => {
+                                        if (!newContact.tags?.includes(tag)) {
+                                          setNewContact({
+                                            ...newContact,
+                                            tags: [...(newContact.tags || []), tag]
+                                          });
+                                        }
+                                        toggleTagPopover('add-new');
+                                      }}
+                                    >
+                                      {tag}
+                                    </Badge>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
               </div>
               <div>
                 <Label htmlFor="add-company">Empresa</Label>
@@ -1145,6 +1925,34 @@ export default function Contacts() {
                   placeholder="Observações adicionais"
                 />
               </div>
+              
+              {/* Campos Personalizados */}
+              {customFields && customFields.length > 0 && (
+                <div className="space-y-4">
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-muted-foreground mb-3">Campos Personalizados</h4>
+                    {customFields.map((field: any) => (
+                      <div key={field.id} className="space-y-2">
+                        <Label htmlFor={`add-custom-${field.name}`}>
+                          {field.label}
+                        </Label>
+                        <Input
+                          id={`add-custom-${field.name}`}
+                          value={newContact.custom_fields?.[field.name] || ''}
+                          onChange={(e) => setNewContact({
+                            ...newContact,
+                            custom_fields: {
+                              ...newContact.custom_fields,
+                              [field.name]: e.target.value
+                            }
+                          })}
+                          placeholder={`Digite ${field.label.toLowerCase()}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
@@ -1203,16 +2011,107 @@ export default function Contacts() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="edit-tags">Tags (separadas por ponto e vírgula)</Label>
-                  <Input
-                    id="edit-tags"
-                    value={Array.isArray(editingContact.tags) ? editingContact.tags.join(';') : editingContact.tags || ''}
-                    onChange={(e) => setEditingContact({
-                      ...editingContact,
-                      tags: e.target.value.split(';').map(t => t.trim()).filter(Boolean)
-                    })}
-                    placeholder="cliente;vip;prospecto"
-                  />
+                  <Label>Tags</Label>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      {editingContact.tags?.map((tag: string) => (
+                        <Badge 
+                          key={tag} 
+                          variant="secondary" 
+                          className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                          onClick={() => {
+                            const updatedTags = editingContact.tags?.filter((t: string) => t !== tag) || [];
+                            setEditingContact({
+                              ...editingContact,
+                              tags: updatedTags
+                            });
+                          }}
+                          title="Clique para remover"
+                        >
+                          {tag}
+                          <X className="h-3 w-3 ml-1" />
+                        </Badge>
+                      ))}
+                      <Popover open={openTagPopovers[`edit-${editingContact.id}`]} onOpenChange={() => toggleTagPopover(`edit-${editingContact.id}`)}>
+                        <PopoverTrigger asChild>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            className="h-6 w-6 p-0 cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                            title="Adicionar tag"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64">
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium">Adicionar Tag</Label>
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="Nova tag"
+                                value={newTag}
+                                onChange={(e) => setNewTag(e.target.value)}
+                                onKeyPress={(e) => {
+                                  if (e.key === 'Enter') {
+                                    if (newTag.trim() && !editingContact.tags?.includes(newTag.trim())) {
+                                      setEditingContact({
+                                        ...editingContact,
+                                        tags: [...(editingContact.tags || []), newTag.trim()]
+                                      });
+                                    }
+                                    setNewTag('');
+                                    toggleTagPopover(`edit-${editingContact.id}`);
+                                  }
+                                }}
+                              />
+                              <Button 
+                                size="sm" 
+                                onClick={() => {
+                                  if (newTag.trim() && !editingContact.tags?.includes(newTag.trim())) {
+                                    setEditingContact({
+                                      ...editingContact,
+                                      tags: [...(editingContact.tags || []), newTag.trim()]
+                                    });
+                                  }
+                                  setNewTag('');
+                                  toggleTagPopover(`edit-${editingContact.id}`);
+                                }}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            {allAvailableTags.length > 0 && (
+                              <div className="space-y-1">
+                                <Label className="text-xs text-muted-foreground">Tags existentes:</Label>
+                                <div className="flex flex-wrap gap-1">
+                                  {allAvailableTags
+                                    .filter(tag => !editingContact.tags?.includes(tag))
+                                    .map((tag) => (
+                                      <Badge
+                                        key={tag}
+                                        variant="outline"
+                                        className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors text-xs"
+                                        onClick={() => {
+                                          if (!editingContact.tags?.includes(tag)) {
+                                            setEditingContact({
+                                              ...editingContact,
+                                              tags: [...(editingContact.tags || []), tag]
+                                            });
+                                          }
+                                          toggleTagPopover(`edit-${editingContact.id}`);
+                                        }}
+                                      >
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="edit-company">Empresa</Label>
@@ -1236,6 +2135,33 @@ export default function Contacts() {
                     })}
                   />
                 </div>
+                
+                {/* Campos Personalizados */}
+                {editingContact.custom_fields && Object.keys(editingContact.custom_fields).length > 0 && (
+                  <div className="space-y-4">
+                    <div className="border-t pt-4">
+                      <h4 className="text-sm font-medium text-muted-foreground mb-3">Campos Personalizados</h4>
+                      {Object.entries(editingContact.custom_fields).map(([fieldName, fieldValue]) => (
+                        <div key={fieldName} className="space-y-2">
+                          <Label htmlFor={`edit-custom-${fieldName}`} className="capitalize">
+                            {fieldName}
+                          </Label>
+                          <Input
+                            id={`edit-custom-${fieldName}`}
+                            value={fieldValue as string || ''}
+                            onChange={(e) => setEditingContact({
+                              ...editingContact,
+                              custom_fields: {
+                                ...editingContact.custom_fields,
+                                [fieldName]: e.target.value
+                              }
+                            })}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <DialogFooter>
@@ -1244,6 +2170,158 @@ export default function Contacts() {
               </Button>
               <Button onClick={handleSaveEdit}>
                 Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal de Edição em Massa */}
+        <Dialog open={isBulkEditDialogOpen} onOpenChange={setIsBulkEditDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Editar em Massa ({selectedContacts.size} contatos)</DialogTitle>
+              <DialogDescription>
+                Edite os campos abaixo para aplicar a todos os contatos selecionados. 
+                As tags serão adicionadas aos contatos (não substituirão as existentes).
+                Deixe em branco os campos que não deseja alterar.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-6">
+              {/* Tags */}
+              <div className="space-y-3">
+                <Label>Tags</Label>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {bulkEditData.tags.map((tag) => (
+                      <Badge 
+                        key={tag} 
+                        variant="secondary" 
+                        className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground transition-colors"
+                        onClick={() => removeTagFromBulkEdit(tag)}
+                        title="Clique para remover"
+                      >
+                        {tag}
+                        <X className="h-3 w-3 ml-1" />
+                      </Badge>
+                    ))}
+                    <Popover open={openTagPopovers['bulk-edit']} onOpenChange={() => toggleTagPopover('bulk-edit')}>
+                      <PopoverTrigger asChild>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          className="h-6 w-6 p-0 cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                          title="Adicionar tag"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Adicionar Tag</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Nova tag"
+                              value={newTag}
+                              onChange={(e) => setNewTag(e.target.value)}
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  addNewTagToBulkEdit();
+                                  toggleTagPopover('bulk-edit');
+                                }
+                              }}
+                            />
+                            <Button 
+                              size="sm" 
+                              onClick={() => {
+                                addNewTagToBulkEdit();
+                                toggleTagPopover('bulk-edit');
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          {allAvailableTags.length > 0 && (
+                            <div className="space-y-1">
+                              <Label className="text-xs text-muted-foreground">Tags existentes:</Label>
+                              <div className="flex flex-wrap gap-1">
+                                {allAvailableTags
+                                  .filter(tag => !bulkEditData.tags.includes(tag))
+                                  .map((tag) => (
+                                    <Badge
+                                      key={tag}
+                                      variant="outline"
+                                      className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors text-xs"
+                                      onClick={() => {
+                                        addTagToBulkEdit(tag);
+                                        toggleTagPopover('bulk-edit');
+                                      }}
+                                    >
+                                      {tag}
+                                    </Badge>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    As tags serão adicionadas aos contatos selecionados (mantendo as existentes)
+                  </p>
+                </div>
+              </div>
+
+              {/* Empresa */}
+              <div className="space-y-2">
+                <Label htmlFor="bulk-company">Empresa</Label>
+                <Input
+                  id="bulk-company"
+                  placeholder="Deixe em branco para não alterar"
+                  value={bulkEditData.company}
+                  onChange={(e) => setBulkEditData(prev => ({
+                    ...prev,
+                    company: e.target.value
+                  }))}
+                />
+              </div>
+
+              {/* Cargo */}
+              <div className="space-y-2">
+                <Label htmlFor="bulk-position">Cargo</Label>
+                <Input
+                  id="bulk-position"
+                  placeholder="Deixe em branco para não alterar"
+                  value={bulkEditData.position}
+                  onChange={(e) => setBulkEditData(prev => ({
+                    ...prev,
+                    position: e.target.value
+                  }))}
+                />
+              </div>
+
+              {/* Observações */}
+              <div className="space-y-2">
+                <Label htmlFor="bulk-notes">Observações</Label>
+                <Input
+                  id="bulk-notes"
+                  placeholder="Deixe em branco para não alterar"
+                  value={bulkEditData.notes}
+                  onChange={(e) => setBulkEditData(prev => ({
+                    ...prev,
+                    notes: e.target.value
+                  }))}
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsBulkEditDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleBulkEditSave}>
+                Aplicar Alterações
               </Button>
             </DialogFooter>
           </DialogContent>
