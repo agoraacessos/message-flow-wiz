@@ -9,6 +9,7 @@ import { TestTube, ExternalLink, AlertTriangle, CheckCircle, XCircle } from "luc
 import { WebhookService } from "@/utils/webhookService";
 import { WebhookFallback } from "@/utils/webhookFallback";
 import { useToast } from "@/hooks/use-toast";
+import { WebhookDiagnostic } from "./WebhookDiagnostic";
 
 interface WebhookConfigProps {
   webhookUrl: string;
@@ -230,6 +231,9 @@ export function WebhookConfig({ webhookUrl, onWebhookUrlChange, onTestWebhook }:
       <p className="text-xs text-muted-foreground">
         O webhook receberá dados completos no formato Evolution API, incluindo informações do contato, mensagem e campanha.
       </p>
+
+      {/* Diagnóstico */}
+      <WebhookDiagnostic />
     </div>
   );
 }

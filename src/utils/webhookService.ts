@@ -1,5 +1,7 @@
 // Serviço completo para envio de webhooks com fallbacks
 import { WebhookFallback } from './webhookFallback';
+import { WebhookProxyBackend } from './webhookProxyBackend';
+import { WebhookAlternative } from './webhookAlternative';
 
 export interface WebhookResult {
   success: boolean;
@@ -110,7 +112,9 @@ export class WebhookService {
     const methods = [
       () => this.tryDirectWebhook(url, payload),
       () => this.tryProxyWebhook(url, payload),
-      () => this.tryWebhookSite(url, payload)
+      () => this.tryWebhookSite(url, payload),
+      () => WebhookProxyBackend.sendWebhook(url, payload),
+      () => WebhookAlternative.tryAllAlternatives(url, payload)
     ];
 
     let lastError: any = null;
