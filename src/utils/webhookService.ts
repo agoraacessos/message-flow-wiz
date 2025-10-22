@@ -1,9 +1,13 @@
 // Serviço completo para envio de webhooks com fallbacks
+import { WebhookFallback } from './webhookFallback';
+
 export interface WebhookResult {
   success: boolean;
   status?: number;
   error?: string;
   method?: string;
+  fallbackUrl?: string;
+  fallbackMessage?: string;
 }
 
 export class WebhookService {
@@ -109,14 +113,39 @@ export class WebhookService {
       () => this.tryWebhookSite(url, payload)
     ];
 
+    let lastError: any = null;
+
     for (const method of methods) {
       const result = await method();
       if (result.success) {
         return result;
       }
+      lastError = result;
     }
 
-    return { success: false, error: 'Todos os métodos falharam' };
+    // Se todos os métodos falharam e é n8n, sugerir webhook.site
+    if (WebhookFallback.shouldUseFallback(url, lastError)) {
+      const fallbackUrl = WebhookFallback.generateWebhookSiteUrl();
+      const fallbackMessage = WebhookFallback.getFallbackMessage(url);
+      
+      console.log('🔄 Tentando fallback para webhook.site...');
+      const fallbackResult = await this.tryDirectWebhook(fallbackUrl, payload);
+      
+      if (fallbackResult.success) {
+        return {
+          ...fallbackResult,
+          fallbackUrl,
+          fallbackMessage
+        };
+      }
+    }
+
+    return { 
+      success: false, 
+      error: 'Todos os métodos falharam',
+      fallbackUrl: WebhookFallback.getFallbackUrl(),
+      fallbackMessage: WebhookFallback.getFallbackMessage(url)
+    };
   }
 
   static async testWebhook(url: string): Promise<WebhookResult> {

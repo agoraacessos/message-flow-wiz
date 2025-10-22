@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { TestTube, ExternalLink, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
 import { WebhookService } from "@/utils/webhookService";
+import { WebhookFallback } from "@/utils/webhookFallback";
 import { useToast } from "@/hooks/use-toast";
 
 interface WebhookConfigProps {
@@ -38,10 +39,17 @@ export function WebhookConfig({ webhookUrl, onWebhookUrlChange, onTestWebhook }:
       setTestResult(result);
 
       if (result.success) {
-        toast({
-          title: "✅ Webhook Funcionando!",
-          description: `Enviado com sucesso via ${result.method}`,
-        });
+        if (result.fallbackUrl) {
+          toast({
+            title: "✅ Webhook Funcionando (Fallback)!",
+            description: `Enviado via ${result.method} usando webhook.site`,
+          });
+        } else {
+          toast({
+            title: "✅ Webhook Funcionando!",
+            description: `Enviado com sucesso via ${result.method}`,
+          });
+        }
       } else {
         toast({
           title: "❌ Webhook Falhou",
@@ -120,13 +128,49 @@ export function WebhookConfig({ webhookUrl, onWebhookUrlChange, onTestWebhook }:
               <>
                 <strong>✅ Webhook funcionando!</strong><br />
                 Status: {testResult.status} | Método: {testResult.method}
+                {testResult.fallbackUrl && (
+                  <>
+                    <br />
+                    <small>⚠️ Usando fallback para webhook.site</small>
+                  </>
+                )}
               </>
             ) : (
               <>
                 <strong>❌ Webhook falhou:</strong><br />
                 {testResult.error}
+                {testResult.fallbackMessage && (
+                  <>
+                    <br />
+                    <strong>💡 Solução:</strong><br />
+                    {testResult.fallbackMessage}
+                  </>
+                )}
               </>
             )}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Sugestão de Fallback */}
+      {testResult && !testResult.success && testResult.fallbackUrl && (
+        <Alert className="border-blue-200 bg-blue-50">
+          <ExternalLink className="h-4 w-4 text-blue-600" />
+          <AlertDescription className="text-blue-800">
+            <strong>🚀 Teste Rápido:</strong><br />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onWebhookUrlChange(testResult.fallbackUrl!);
+                handleTest();
+              }}
+              className="mt-2"
+            >
+              <ExternalLink className="w-3 h-3 mr-1" />
+              Usar webhook.site
+            </Button>
           </AlertDescription>
         </Alert>
       )}
@@ -139,7 +183,13 @@ export function WebhookConfig({ webhookUrl, onWebhookUrlChange, onTestWebhook }:
             <strong>URL do n8n detectada:</strong><br />
             • Verifique se o webhook está ativo no n8n<br />
             • Configure CORS para permitir requisições do Vercel<br />
-            • Certifique-se de que a URL está correta
+            • Certifique-se de que a URL está correta<br />
+            <br />
+            <strong>⚠️ Problema de CORS:</strong><br />
+            O domínio do Vercel muda a cada deploy. Configure no n8n:<br />
+            <code className="text-xs bg-gray-100 px-1 rounded">
+              Access-Control-Allow-Origin: *
+            </code>
           </AlertDescription>
         </Alert>
       )}
