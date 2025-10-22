@@ -30,21 +30,52 @@ Disparado quando uma mensagem é enviada para um contato.
   },
   "destination": "5511999999999@s.whatsapp.net",
   "date_time": "2024-10-21T14:00:07.000Z",
-  "sender": {
+  "contact": {
     "id": "uuid-do-contato",
     "name": "João Silva",
-    "phone": "+5511999999999"
+    "phone": "+5511999999999",
+    "phone2": "+5511888888888",
+    "phone3": "+5511777777777",
+    "email": "joao@empresa.com",
+    "tags": ["vip", "cliente-premium"],
+    "company": "Empresa ABC",
+    "position": "Gerente",
+    "notes": "Cliente importante",
+    "custom_fields": {
+      "idade": "35",
+      "cidade": "São Paulo",
+      "interesse": "tecnologia"
+    },
+    "created_at": "2024-10-01T10:00:00.000Z",
+    "updated_at": "2024-10-21T14:00:00.000Z"
   },
   "message": {
     "id": "uuid-da-mensagem",
     "title": "Promoção Black Friday",
-    "content": "Olá {{nome}}! Confira nossa promoção especial..."
+    "content": "Olá {{nome}}! Confira nossa promoção especial...",
+    "type": "text",
+    "media_url": null,
+    "variables": ["nome", "empresa"],
+    "created_at": "2024-10-20T15:00:00.000Z",
+    "updated_at": "2024-10-20T15:00:00.000Z"
   },
   "campaign": {
     "id": "uuid-da-campanha",
-    "name": "Promoção Black Friday"
+    "name": "Promoção Black Friday",
+    "status": "sending",
+    "scheduled_at": null,
+    "min_delay_between_clients": 5,
+    "max_delay_between_clients": 10,
+    "webhook_url": "https://n8n-n8n.k5tlyc.easypanel.host/webhook-test/recebido-disparo",
+    "created_at": "2024-10-21T14:00:00.000Z",
+    "updated_at": "2024-10-21T14:00:00.000Z"
   },
-  "sent_at": "2024-10-21T14:00:07.000Z"
+  "metadata": {
+    "sent_at": "2024-10-21T14:00:07.000Z",
+    "contact_index": 1,
+    "total_contacts": 5,
+    "delay_applied": 7
+  }
 }
 ```
 
@@ -100,35 +131,103 @@ Disparado quando uma nova campanha é criada.
 ```javascript
 // Acessar dados da mensagem
 const messageContent = $json.data.message.conversation;
-const contactName = $json.data.pushName;
-const contactPhone = $json.sender.phone;
+const contactName = $json.contact.name;
+const contactPhone = $json.contact.phone;
 const campaignName = $json.campaign.name;
+
+// Acessar dados completos do contato
+const contactData = {
+  id: $json.contact.id,
+  name: $json.contact.name,
+  phone: $json.contact.phone,
+  phone2: $json.contact.phone2,
+  phone3: $json.contact.phone3,
+  email: $json.contact.email,
+  tags: $json.contact.tags,
+  company: $json.contact.company,
+  position: $json.contact.position,
+  notes: $json.contact.notes,
+  custom_fields: $json.contact.custom_fields
+};
 
 // Acessar dados da campanha
 const campaignId = $json.campaign.id;
 const messageId = $json.message.id;
+
+// Acessar metadados do envio
+const sentAt = $json.metadata.sent_at;
+const contactIndex = $json.metadata.contact_index;
+const totalContacts = $json.metadata.total_contacts;
+const delayApplied = $json.metadata.delay_applied;
 ```
 
 ### **3. Exemplo de Uso Completo**
 ```javascript
 // Verificar tipo de evento
 if ($json.event === "MESSAGES_UPSERT") {
-  // Processar envio de mensagem
+  // Processar envio de mensagem com TODOS os dados
   const messageData = {
-    contact: $json.sender.name,
-    phone: $json.sender.phone,
-    message: $json.data.message.conversation,
-    campaign: $json.campaign.name,
-    sentAt: $json.sent_at
+    // Dados do contato (completos)
+    contact: {
+      id: $json.contact.id,
+      name: $json.contact.name,
+      phone: $json.contact.phone,
+      phone2: $json.contact.phone2,
+      phone3: $json.contact.phone3,
+      email: $json.contact.email,
+      tags: $json.contact.tags,
+      company: $json.contact.company,
+      position: $json.contact.position,
+      notes: $json.contact.notes,
+      custom_fields: $json.contact.custom_fields
+    },
+    // Dados da mensagem
+    message: {
+      id: $json.message.id,
+      title: $json.message.title,
+      content: $json.data.message.conversation,
+      type: $json.message.type,
+      media_url: $json.message.media_url,
+      variables: $json.message.variables
+    },
+    // Dados da campanha
+    campaign: {
+      id: $json.campaign.id,
+      name: $json.campaign.name,
+      status: $json.campaign.status,
+      scheduled_at: $json.campaign.scheduled_at,
+      delays: {
+        min: $json.campaign.min_delay_between_clients,
+        max: $json.campaign.max_delay_between_clients
+      }
+    },
+    // Metadados do envio
+    metadata: {
+      sent_at: $json.metadata.sent_at,
+      contact_index: $json.metadata.contact_index,
+      total_contacts: $json.metadata.total_contacts,
+      delay_applied: $json.metadata.delay_applied
+    }
   };
   
-  // Fazer algo com os dados...
+  // Exemplo: Salvar no banco de dados
+  // await saveMessageLog(messageData);
+  
+  // Exemplo: Enviar para outro sistema
+  // await sendToCRM(messageData.contact);
+  
+  // Exemplo: Processar tags
+  if (messageData.contact.tags.includes('vip')) {
+    // Lógica especial para clientes VIP
+  }
+  
 } else if ($json.event === "CONNECTION_UPDATE") {
   // Processar criação de campanha
   const campaignData = {
     id: $json.campaign.id,
     name: $json.campaign.name,
-    status: $json.campaign.status
+    status: $json.campaign.status,
+    created_at: $json.campaign.created_at
   };
   
   // Fazer algo com os dados...

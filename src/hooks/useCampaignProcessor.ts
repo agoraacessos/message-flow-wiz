@@ -72,10 +72,13 @@ export function useCampaignProcessor() {
         return;
       }
 
-      // Buscar contatos
+      // Buscar contatos com TODOS os dados (incluindo campos customizados)
       const { data: contacts, error: contactsError } = await supabase
         .from('contacts')
-        .select('*')
+        .select(`
+          *,
+          custom_fields
+        `)
         .in('id', campaign.contact_ids || []);
 
       if (contactsError || !contacts || contacts.length === 0) {
@@ -114,7 +117,7 @@ export function useCampaignProcessor() {
             console.log(`🔗 Enviando webhook para ${contact.name}...`);
             console.log(`📡 URL: ${campaign.webhook_url}`);
             
-            // Formato Evolution API - MESSAGES_UPSERT
+            // Formato Evolution API - MESSAGES_UPSERT com TODOS os dados
             const webhookPayload = {
               event: "MESSAGES_UPSERT",
               instance: "message-flow-wiz",
@@ -135,21 +138,52 @@ export function useCampaignProcessor() {
               },
               destination: contact.phone.replace(/\D/g, '') + "@s.whatsapp.net",
               date_time: new Date().toISOString(),
-              sender: {
+              // DADOS COMPLETOS DO CONTATO
+              contact: {
                 id: contact.id,
                 name: contact.name,
-                phone: contact.phone
+                phone: contact.phone,
+                phone2: contact.phone2 || null,
+                phone3: contact.phone3 || null,
+                email: contact.email || null,
+                tags: contact.tags || [],
+                company: contact.company || null,
+                position: contact.position || null,
+                notes: contact.notes || null,
+                custom_fields: contact.custom_fields || {},
+                created_at: contact.created_at,
+                updated_at: contact.updated_at
               },
+              // DADOS COMPLETOS DA MENSAGEM
               message: {
                 id: message.id,
                 title: message.title,
-                content: message.content
+                content: message.content,
+                type: message.type || 'text',
+                media_url: message.media_url || null,
+                variables: message.variables || [],
+                created_at: message.created_at,
+                updated_at: message.updated_at
               },
+              // DADOS COMPLETOS DA CAMPANHA
               campaign: {
                 id: campaign.id,
-                name: campaign.name
+                name: campaign.name,
+                status: campaign.status,
+                scheduled_at: campaign.scheduled_at,
+                min_delay_between_clients: campaign.min_delay_between_clients,
+                max_delay_between_clients: campaign.max_delay_between_clients,
+                webhook_url: campaign.webhook_url,
+                created_at: campaign.created_at,
+                updated_at: campaign.updated_at
               },
-              sent_at: new Date().toISOString()
+              // METADADOS DO ENVIO
+              metadata: {
+                sent_at: new Date().toISOString(),
+                contact_index: i + 1,
+                total_contacts: contacts.length,
+                delay_applied: delayBetweenContacts
+              }
             };
 
             const webhookResponse = await fetch(campaign.webhook_url, {
