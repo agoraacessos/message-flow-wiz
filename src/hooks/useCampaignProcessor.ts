@@ -114,20 +114,48 @@ export function useCampaignProcessor() {
             console.log(`🔗 Enviando webhook para ${contact.name}...`);
             console.log(`📡 URL: ${campaign.webhook_url}`);
             
+            // Formato Evolution API - MESSAGES_UPSERT
+            const webhookPayload = {
+              event: "MESSAGES_UPSERT",
+              instance: "message-flow-wiz",
+              data: {
+                key: {
+                  remoteJid: contact.phone.replace(/\D/g, '') + "@s.whatsapp.net",
+                  fromMe: true,
+                  id: `3EB0${Date.now()}${Math.random().toString(36).substr(2, 9)}`
+                },
+                message: {
+                  conversation: message.content
+                },
+                messageTimestamp: Math.floor(Date.now() / 1000),
+                status: "PENDING",
+                participant: contact.phone.replace(/\D/g, '') + "@s.whatsapp.net",
+                pushName: contact.name,
+                messageType: "conversation"
+              },
+              destination: contact.phone.replace(/\D/g, '') + "@s.whatsapp.net",
+              date_time: new Date().toISOString(),
+              sender: {
+                id: contact.id,
+                name: contact.name,
+                phone: contact.phone
+              },
+              message: {
+                id: message.id,
+                title: message.title,
+                content: message.content
+              },
+              campaign: {
+                id: campaign.id,
+                name: campaign.name
+              },
+              sent_at: new Date().toISOString()
+            };
+
             const webhookResponse = await fetch(campaign.webhook_url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contact_id: contact.id,
-                contact_name: contact.name,
-                contact_phone: contact.phone,
-                message_id: message.id,
-                message_title: message.title,
-                message_content: message.content,
-                campaign_id: campaign.id,
-                campaign_name: campaign.name,
-                sent_at: new Date().toISOString()
-              })
+              body: JSON.stringify(webhookPayload)
             });
             
             if (webhookResponse.ok) {

@@ -110,10 +110,27 @@ export default function Campaigns() {
       // Call webhook if provided
       if (webhookUrl) {
         try {
+          // Formato Evolution API - CONNECTION_UPDATE (campanha criada)
+          const webhookPayload = {
+            event: "CONNECTION_UPDATE",
+            instance: "message-flow-wiz",
+            data: {
+              state: "open",
+              statusReason: "campaign_created"
+            },
+            campaign: {
+              id: data.id,
+              name: data.name,
+              status: data.status,
+              created_at: data.created_at
+            },
+            date_time: new Date().toISOString()
+          };
+
           await fetch(webhookUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ campaign_id: data.id }),
+            body: JSON.stringify(webhookPayload),
           });
         } catch (webhookError) {
           console.warn('Erro ao chamar webhook:', webhookError);
