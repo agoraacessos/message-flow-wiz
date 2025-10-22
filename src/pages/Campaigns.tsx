@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useCampaignProcessor } from "@/hooks/useCampaignProcessor";
-import { testWebhook } from "@/utils/testWebhook";
+import { WebhookConfig } from "@/components/WebhookConfig";
 
 export default function Campaigns() {
   const [name, setName] = useState("");
@@ -42,44 +42,9 @@ export default function Campaigns() {
   // Hook para processar campanhas imediatas automaticamente
   useCampaignProcessor();
 
-  // Função para testar webhook
-  const handleTestWebhook = async () => {
-    if (!webhookUrl) {
-      toast({
-        title: "Erro",
-        description: "Por favor, insira uma URL de webhook primeiro",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      toast({
-        title: "Testando Webhook...",
-        description: "Enviando dados de teste para o webhook",
-      });
-
-      const result = await testWebhook(webhookUrl);
-      
-      if (result.success) {
-        toast({
-          title: "✅ Webhook Funcionando!",
-          description: "O webhook recebeu os dados de teste com sucesso",
-        });
-      } else {
-        toast({
-          title: "❌ Webhook Falhou",
-          description: `Erro: ${result.error || 'Erro desconhecido'}`,
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "❌ Erro no Teste",
-        description: `Falha ao testar webhook: ${error.message}`,
-        variant: "destructive",
-      });
-    }
+  // Função para testar webhook (usada pelo componente WebhookConfig)
+  const handleTestWebhook = () => {
+    // Esta função será chamada pelo componente WebhookConfig
   };
 
   const { data: messages } = useQuery({
@@ -870,33 +835,11 @@ export default function Campaigns() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="webhook">URL do Webhook n8n (opcional)</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="webhook"
-                    type="url"
-                    placeholder="https://seu-n8n.com/webhook/..."
-                    value={webhookUrl}
-                    onChange={(e) => setWebhookUrl(e.target.value)}
-                    className="flex-1"
-                  />
-                  {webhookUrl && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleTestWebhook}
-                    >
-                      <TestTube className="w-4 h-4 mr-2" />
-                      Testar
-                    </Button>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Teste a URL antes de criar a campanha. Use <a href="https://webhook.site" target="_blank" className="text-blue-600 underline">webhook.site</a> para testes.
-                </p>
-              </div>
+              <WebhookConfig
+                webhookUrl={webhookUrl}
+                onWebhookUrlChange={setWebhookUrl}
+                onTestWebhook={handleTestWebhook}
+              />
 
               <div className="flex gap-2">
                 {editingCampaign && (

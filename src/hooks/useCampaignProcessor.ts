@@ -1,7 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { sendWebhook } from '@/utils/webhookProxy';
+import { WebhookService } from '@/utils/webhookService';
 
 export function useCampaignProcessor() {
   const queryClient = useQueryClient();
@@ -187,13 +187,14 @@ export function useCampaignProcessor() {
               }
             };
 
-            const webhookResult = await sendWebhook(campaign.webhook_url, webhookPayload);
+            const webhookResult = await WebhookService.sendWebhook(campaign.webhook_url, webhookPayload);
             
             if (webhookResult.success) {
-              console.log(`✅ Webhook enviado com sucesso para ${contact.name} (${webhookResult.status})`);
+              console.log(`✅ Webhook enviado com sucesso para ${contact.name} (${webhookResult.status}) via ${webhookResult.method}`);
             } else {
               console.warn(`❌ Webhook falhou para ${contact.name}:`);
               console.warn(`   Erro: ${webhookResult.error}`);
+              console.warn(`   Método: ${webhookResult.method}`);
               console.warn(`   URL: ${campaign.webhook_url}`);
             }
           } catch (webhookError) {
