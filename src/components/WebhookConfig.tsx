@@ -2,14 +2,13 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { TestTube, ExternalLink, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
+import { TestTube, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
 import { WebhookService } from "@/utils/webhookService";
 import { WebhookFallback } from "@/utils/webhookFallback";
+import { N8nWebhookService } from "@/utils/n8nWebhookService";
 import { useToast } from "@/hooks/use-toast";
-import { WebhookDiagnostic } from "./WebhookDiagnostic";
 
 interface WebhookConfigProps {
   webhookUrl: string;
@@ -36,7 +35,10 @@ export function WebhookConfig({ webhookUrl, onWebhookUrlChange, onTestWebhook }:
     setTestResult(null);
 
     try {
-      const result = await WebhookService.testWebhook(webhookUrl);
+      // Se for URL do n8n, usar o serviço específico
+      const result = isN8nUrl 
+        ? await N8nWebhookService.testN8nWebhook(webhookUrl)
+        : await WebhookService.testWebhook(webhookUrl);
       setTestResult(result);
 
       if (result.success) {
@@ -70,9 +72,6 @@ export function WebhookConfig({ webhookUrl, onWebhookUrlChange, onTestWebhook }:
     }
   };
 
-  const openWebhookSite = () => {
-    window.open('https://webhook.site', '_blank');
-  };
 
   const isN8nUrl = webhookUrl.includes('n8n') || webhookUrl.includes('easypanel');
   const isWebhookSiteUrl = webhookUrl.includes('webhook.site');
@@ -156,7 +155,7 @@ export function WebhookConfig({ webhookUrl, onWebhookUrlChange, onTestWebhook }:
       {/* Sugestão de Fallback */}
       {testResult && !testResult.success && testResult.fallbackUrl && (
         <Alert className="border-blue-200 bg-blue-50">
-          <ExternalLink className="h-4 w-4 text-blue-600" />
+          <AlertTriangle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-800">
             <strong>🚀 Teste Rápido:</strong><br />
             <Button
@@ -169,71 +168,13 @@ export function WebhookConfig({ webhookUrl, onWebhookUrlChange, onTestWebhook }:
               }}
               className="mt-2"
             >
-              <ExternalLink className="w-3 h-3 mr-1" />
               Usar webhook.site
             </Button>
           </AlertDescription>
         </Alert>
       )}
 
-      {/* Avisos e Dicas */}
-      {isN8nUrl && (
-        <Alert>
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
-            <strong>URL do n8n detectada:</strong><br />
-            • Verifique se o webhook está ativo no n8n<br />
-            • Configure CORS para permitir requisições do Vercel<br />
-            • Certifique-se de que a URL está correta<br />
-            <br />
-            <strong>⚠️ Problema de CORS:</strong><br />
-            O domínio do Vercel muda a cada deploy. Configure no n8n:<br />
-            <code className="text-xs bg-gray-100 px-1 rounded">
-              Access-Control-Allow-Origin: *
-            </code>
-          </AlertDescription>
-        </Alert>
-      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">💡 Dicas de Configuração</CardTitle>
-          <CardDescription className="text-xs">
-            Configure seu webhook corretamente para receber os dados
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Para testes rápidos:</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={openWebhookSite}
-              className="text-xs h-6 px-2"
-            >
-              <ExternalLink className="w-3 h-3 mr-1" />
-              webhook.site
-            </Button>
-          </div>
-          
-          <div className="text-xs text-muted-foreground">
-            <strong>Para n8n:</strong>
-            <ul className="list-disc list-inside mt-1 space-y-1">
-              <li>HTTP Method: POST</li>
-              <li>Response: Immediately</li>
-              <li>CORS: Permitir origem do Vercel</li>
-            </ul>
-          </div>
-        </CardContent>
-      </Card>
-
-      <p className="text-xs text-muted-foreground">
-        O webhook receberá dados completos no formato Evolution API, incluindo informações do contato, mensagem e campanha.
-      </p>
-
-      {/* Diagnóstico */}
-      <WebhookDiagnostic />
     </div>
   );
 }

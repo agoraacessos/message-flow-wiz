@@ -3,6 +3,47 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { WebhookService } from '@/utils/webhookService';
 
+// Função para substituir variáveis do sistema pelos valores reais do contato
+function replaceSystemVariables(content: string, contact: any): string {
+  if (!content || typeof content !== 'string') return content;
+  
+  // Mapeamento das variáveis do sistema
+  const systemVariables: { [key: string]: string } = {
+    '{{nome}}': contact.name || '',
+    '{{name}}': contact.name || '',
+    '{{telefone}}': contact.phone || '',
+    '{{phone}}': contact.phone || '',
+    '{{telefone2}}': contact.phone2 || '',
+    '{{phone2}}': contact.phone2 || '',
+    '{{telefone3}}': contact.phone3 || '',
+    '{{phone3}}': contact.phone3 || '',
+    '{{email}}': contact.email || '',
+    '{{empresa}}': contact.company || '',
+    '{{company}}': contact.company || '',
+    '{{cargo}}': contact.position || '',
+    '{{position}}': contact.position || '',
+    '{{observacoes}}': contact.notes || '',
+    '{{notes}}': contact.notes || '',
+    '{{tags}}': Array.isArray(contact.tags) ? contact.tags.join(', ') : '',
+  };
+
+  // Adicionar campos customizados
+  if (contact.custom_fields && typeof contact.custom_fields === 'object') {
+    Object.entries(contact.custom_fields).forEach(([key, value]) => {
+      systemVariables[`{{${key}}}`] = String(value || '');
+    });
+  }
+
+  // Substituir todas as variáveis
+  let processedContent = content;
+  Object.entries(systemVariables).forEach(([variable, value]) => {
+    const regex = new RegExp(variable.replace(/[{}]/g, '\\$&'), 'g');
+    processedContent = processedContent.replace(regex, value);
+  });
+
+  return processedContent;
+}
+
 export function useCampaignProcessor() {
   const queryClient = useQueryClient();
 
@@ -102,15 +143,16 @@ export function useCampaignProcessor() {
       for (let i = 0; i < contacts.length; i++) {
         const contact = contacts[i];
         
-        // Gerar delay aleatório entre contatos (não desde o início)
-        const delayBetweenContacts = Math.floor(
-          Math.random() * (campaign.max_delay_between_clients - campaign.min_delay_between_clients + 1)
-        ) + campaign.min_delay_between_clients;
+        try {
+          // Gerar delay aleatório entre contatos (não desde o início)
+          const delayBetweenContacts = Math.floor(
+            Math.random() * (campaign.max_delay_between_clients - campaign.min_delay_between_clients + 1)
+          ) + campaign.min_delay_between_clients;
 
-        console.log(`📨 Enviando para ${contact.name} (${i + 1}/${contacts.length})`);
+          console.log(`📨 [${i + 1}/${contacts.length}] Processando contato: ${contact.name} (${contact.phone})`);
 
-        // Simular envio (aqui você integraria com WhatsApp API, SMS, etc.)
-        await new Promise(resolve => setTimeout(resolve, 1000));
+          // Simular envio (aqui você integraria com WhatsApp API, SMS, etc.)
+          await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Chamar webhook se configurado
         if (campaign.webhook_url) {
@@ -118,6 +160,13 @@ export function useCampaignProcessor() {
             console.log(`🔗 Enviando webhook para ${contact.name}...`);
             console.log(`📡 URL: ${campaign.webhook_url}`);
             
+            // Processar variáveis do sistema no conteúdo da mensagem
+            const processedMessageContent = replaceSystemVariables(message.content, contact);
+            
+            console.log(`🔄 Variáveis processadas para ${contact.name}:`);
+            console.log(`   Original: ${message.content}`);
+            console.log(`   Processado: ${processedMessageContent}`);
+
             // Formato Evolution API - MESSAGES_UPSERT com TODOS os dados
             const webhookPayload = {
               event: "MESSAGES_UPSERT",
@@ -129,7 +178,7 @@ export function useCampaignProcessor() {
                   id: `3EB0${Date.now()}${Math.random().toString(36).substr(2, 9)}`
                 },
                 message: {
-                  conversation: message.content
+                  conversation: processedMessageContent
                 },
                 messageTimestamp: Math.floor(Date.now() / 1000),
                 status: "PENDING",
@@ -159,7 +208,8 @@ export function useCampaignProcessor() {
               message: {
                 id: message.id,
                 title: message.title,
-                content: message.content,
+                content: processedMessageContent, // Conteúdo com variáveis processadas
+                original_content: message.content, // Conteúdo original com variáveis
                 type: message.type || 'text',
                 media_url: message.media_url || null,
                 variables: message.variables || [],
@@ -187,6 +237,7 @@ export function useCampaignProcessor() {
               }
             };
 
+            console.log(`📤 Enviando webhook para ${contact.name}...`);
             const webhookResult = await WebhookService.sendWebhook(campaign.webhook_url, webhookPayload);
             
             if (webhookResult.success) {
@@ -206,12 +257,22 @@ export function useCampaignProcessor() {
           console.log(`ℹ️ Nenhum webhook configurado para ${contact.name}`);
         }
 
-        // Aguardar delay antes do próximo contato (exceto no último)
-        if (i < contacts.length - 1) {
-          console.log(`⏳ Aguardando ${delayBetweenContacts}s antes do próximo contato...`);
-          await new Promise(resolve => setTimeout(resolve, delayBetweenContacts * 1000));
+          // Aguardar delay antes do próximo contato (exceto no último)
+          if (i < contacts.length - 1) {
+            console.log(`⏳ Aguardando ${delayBetweenContacts}s antes do próximo contato...`);
+            await new Promise(resolve => setTimeout(resolve, delayBetweenContacts * 1000));
+          }
+          
+          console.log(`✅ Contato ${i + 1}/${contacts.length} processado com sucesso: ${contact.name}`);
+          
+        } catch (contactError) {
+          console.error(`❌ Erro ao processar contato ${i + 1}/${contacts.length} (${contact.name}):`, contactError);
+          // Continuar com o próximo contato mesmo se este falhar
+          continue;
         }
       }
+
+      console.log(`🎉 Campanha concluída! Processados ${contacts.length} contatos.`);
 
       // Marcar como concluído com timeout
       const finalUpdate = await Promise.race([
@@ -293,18 +354,114 @@ export function useCampaignProcessor() {
     }
   }, [processImmediateCampaign]);
 
-  // Verificar campanhas imediatas a cada 5 segundos
+  const checkAndProcessScheduledCampaigns = useCallback(async () => {
+    try {
+      const now = new Date().toISOString();
+      const nowLocal = new Date().toLocaleString('pt-BR', { 
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+      
+      console.log(`🕐 Verificando campanhas agendadas:`);
+      console.log(`   Horário local (Brasília): ${nowLocal}`);
+      console.log(`   Horário UTC: ${now}`);
+      
+      // Buscar TODAS as campanhas agendadas pendentes (para debug)
+      const { data: allScheduledCampaigns, error: allError } = await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('status', 'pending')
+        .not('scheduled_at', 'is', null)
+        .order('scheduled_at', { ascending: true });
+
+      if (allError) {
+        console.error('❌ Erro ao buscar todas as campanhas agendadas:', allError);
+        return;
+      }
+
+      if (allScheduledCampaigns && allScheduledCampaigns.length > 0) {
+        console.log(`📋 Todas as campanhas agendadas pendentes:`);
+        allScheduledCampaigns.forEach(campaign => {
+          const scheduledTime = new Date(campaign.scheduled_at);
+          const currentTime = new Date(now);
+          const timeDiff = scheduledTime.getTime() - currentTime.getTime();
+          const minutesDiff = Math.round(timeDiff / (1000 * 60));
+          
+          // Converter horário agendado para horário local para debug
+          const scheduledLocal = scheduledTime.toLocaleString('pt-BR', { 
+            timeZone: 'America/Sao_Paulo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          
+          console.log(`   - ${campaign.name}:`);
+          console.log(`     Agendada para (UTC): ${campaign.scheduled_at}`);
+          console.log(`     Agendada para (Local): ${scheduledLocal}`);
+          console.log(`     Horário atual (Local): ${nowLocal}`);
+          console.log(`     Diferença: ${minutesDiff} minutos (${timeDiff > 0 ? 'ainda não chegou' : 'já passou'})`);
+        });
+      }
+
+      // Buscar campanhas agendadas que devem ser executadas
+      const { data: campaigns, error } = await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('status', 'pending')
+        .not('scheduled_at', 'is', null)
+        .lte('scheduled_at', now)
+        .order('scheduled_at', { ascending: true });
+
+      if (error) {
+        console.error('❌ Erro ao buscar campanhas agendadas:', error);
+        return;
+      }
+
+      if (!campaigns || campaigns.length === 0) {
+        return;
+      }
+
+      console.log(`📅 Encontradas ${campaigns.length} campanhas agendadas para executar:`);
+      campaigns.forEach(campaign => {
+        console.log(`   - ${campaign.name}: agendada para ${campaign.scheduled_at}`);
+      });
+
+      // Processar cada campanha agendada
+      for (const campaign of campaigns) {
+        console.log(`🚀 Processando campanha agendada: ${campaign.name} (ID: ${campaign.id})`);
+        await processImmediateCampaign(campaign.id);
+      }
+
+    } catch (error) {
+      console.error('❌ Erro ao verificar campanhas agendadas:', error);
+    }
+  }, [processImmediateCampaign]);
+
+  // Verificar campanhas imediatas e agendadas a cada 5 segundos
   useEffect(() => {
-    const interval = setInterval(checkAndProcessImmediateCampaigns, 5000);
+    const interval = setInterval(() => {
+      checkAndProcessImmediateCampaigns();
+      checkAndProcessScheduledCampaigns();
+    }, 5000);
     
     // Verificar imediatamente
     checkAndProcessImmediateCampaigns();
+    checkAndProcessScheduledCampaigns();
 
     return () => clearInterval(interval);
-  }, [checkAndProcessImmediateCampaigns]);
+  }, [checkAndProcessImmediateCampaigns, checkAndProcessScheduledCampaigns]);
 
   return {
     processImmediateCampaign,
-    checkAndProcessImmediateCampaigns
+    checkAndProcessImmediateCampaigns,
+    checkAndProcessScheduledCampaigns
   };
 }

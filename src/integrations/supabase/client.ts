@@ -2,12 +2,17 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'placeholder-key';
 
 // Debug: verificar se as variáveis estão sendo carregadas
 console.log('Supabase URL:', SUPABASE_URL);
 console.log('Supabase Key:', SUPABASE_PUBLISHABLE_KEY ? 'Loaded' : 'Not loaded');
+
+// Aviso se usando valores padrão
+if (SUPABASE_URL === 'https://placeholder.supabase.co') {
+  console.warn('⚠️ Usando valores padrão do Supabase. Configure as variáveis de ambiente VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY');
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";

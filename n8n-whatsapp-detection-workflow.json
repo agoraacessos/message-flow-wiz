@@ -1,0 +1,302 @@
+{
+  "name": "WhatsApp Message Detection",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-incoming",
+        "options": {}
+      },
+      "id": "webhook-whatsapp",
+      "name": "Webhook WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "whatsapp-incoming"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.message }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-message",
+      "name": "Filtrar Mensagem",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrair dados da mensagem do WhatsApp\nconst messageData = {\n  from: $input.first().json.from || $input.first().json.phone || $input.first().json.contact,\n  message: $input.first().json.message || $input.first().json.text || $input.first().json.body,\n  timestamp: $input.first().json.timestamp || new Date().toISOString(),\n  messageId: $input.first().json.messageId || $input.first().json.id || `msg_${Date.now()}`,\n  contactName: $input.first().json.contactName || $input.first().json.name || null\n};\n\n// Log para debug\nconsole.log('📨 Mensagem recebida:', messageData);\n\n// Retornar dados formatados\nreturn {\n  json: messageData\n};"
+      },
+      "id": "format-message",
+      "name": "Formatar Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://seu-sistema.com/api/whatsapp-webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8n-whatsapp-detection"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "from",
+              "value": "={{ $json.from }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.message }}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{ $json.timestamp }}"
+            },
+            {
+              "name": "messageId",
+              "value": "={{ $json.messageId }}"
+            },
+            {
+              "name": "contactName",
+              "value": "={{ $json.contactName }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000,
+          "retry": {
+            "enabled": true,
+            "maxRetries": 3
+          }
+        }
+      },
+      "id": "send-to-system",
+      "name": "Enviar para Sistema",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-response",
+      "name": "Verificar Resposta",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de sucesso\nconsole.log('✅ Mensagem processada com sucesso:', {\n  from: $('Formatar Mensagem').first().json.from,\n  message: $('Formatar Mensagem').first().json.message,\n  status: $json.status,\n  response: $json.message\n});\n\n// Retornar dados de sucesso\nreturn {\n  json: {\n    success: true,\n    message: 'Mensagem processada com sucesso',\n    data: $('Formatar Mensagem').first().json,\n    response: $json\n  }\n};"
+      },
+      "id": "log-success",
+      "name": "Log Sucesso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de erro\nconsole.error('❌ Erro ao processar mensagem:', {\n  from: $('Formatar Mensagem').first().json.from,\n  message: $('Formatar Mensagem').first().json.message,\n  status: $json.status,\n  error: $json.message\n});\n\n// Retornar dados de erro\nreturn {\n  json: {\n    success: false,\n    message: 'Erro ao processar mensagem',\n    data: $('Formatar Mensagem').first().json,\n    error: $json\n  }\n};"
+      },
+      "id": "log-error",
+      "name": "Log Erro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-webhook",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de mensagem inválida\nconsole.warn('⚠️ Mensagem inválida recebida:', $input.first().json);\n\n// Retornar erro\nreturn {\n  json: {\n    success: false,\n    message: 'Mensagem inválida - campo message está vazio',\n    data: $input.first().json\n  }\n};"
+      },
+      "id": "log-invalid",
+      "name": "Log Inválido",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 500]
+    }
+  ],
+  "connections": {
+    "Webhook WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Formatar Mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Inválido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Mensagem": {
+      "main": [
+        [
+          {
+            "node": "Enviar para Sistema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar para Sistema": {
+      "main": [
+        [
+          {
+            "node": "Verificar Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Resposta": {
+      "main": [
+        [
+          {
+            "node": "Log Sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Erro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Sucesso": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Erro": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Inválido": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-21T10:00:00.000Z",
+      "updatedAt": "2024-01-21T10:00:00.000Z",
+      "id": "whatsapp-detection",
+      "name": "WhatsApp Detection"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-21T10:00:00.000Z",
+  "versionId": "1"
+}

@@ -19,6 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import React, { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { ExcelUpload } from "@/components/ExcelUpload";
+import { ContactGroups } from "@/components/ContactGroups";
 import * as XLSX from 'xlsx';
 
 export default function Contacts() {
@@ -1191,10 +1192,15 @@ export default function Contacts() {
         </Card>
 
         <Tabs defaultValue="list" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="list">Lista de Contatos</TabsTrigger>
+            <TabsTrigger value="groups">Grupos</TabsTrigger>
             <TabsTrigger value="import">Importar Contatos</TabsTrigger>
           </TabsList>
+          
+          <TabsContent value="groups" className="space-y-6">
+            <ContactGroups selectedContacts={selectedContacts} mode="manage" />
+          </TabsContent>
           
           <TabsContent value="import" className="space-y-6">
             <Card>
@@ -1429,8 +1435,8 @@ export default function Contacts() {
                             )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {new Date(contact.created_at).toLocaleDateString("pt-BR")}
-                          </TableCell>
+                        {contact.created_at ? new Date(contact.created_at).toLocaleDateString("pt-BR") : "Data não disponível"}
+                      </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
                               <Button

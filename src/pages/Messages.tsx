@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MessageSquare, Plus, Trash2, Image, FileText, Link, Type, GripVertical, X, Upload, Eye, EyeOff, Edit, Volume2 } from "lucide-react";
+import { MessageSquare, Plus, Trash2, Image, FileText, Link, Type, GripVertical, X, Upload, Eye, EyeOff, Edit, Volume2, Play, Pause } from "lucide-react";
 import { WhatsAppSimulator } from "@/components/WhatsAppSimulator";
 import { TextFormatToolbar } from "@/components/TextFormatToolbar";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -25,6 +25,8 @@ interface MessageContent {
     filename?: string;
     url?: string;
     alt?: string;
+    audioFile?: File;
+    audioBase64?: string;
   };
   delay?: number; // Pausa em segundos antes desta mensagem
 }
@@ -33,7 +35,6 @@ export default function Messages() {
   const [title, setTitle] = useState("");
   const [messageFlow, setMessageFlow] = useState<MessageContent[]>([]);
   const [showImagePreview, setShowImagePreview] = useState<{ [key: string]: boolean }>({});
-  const [activeTextarea, setActiveTextarea] = useState<string | null>(null);
   
   // Estados para edição
   const [isEditMode, setIsEditMode] = useState(false);
@@ -46,9 +47,75 @@ export default function Messages() {
   const [toolbarPosition, setToolbarPosition] = useState({ x: 0, y: 0 });
   const [activeTextareaId, setActiveTextareaId] = useState<string | null>(null);
   
+  // Estados para preview
+  const [audioPreview, setAudioPreview] = useState<{ [key: string]: boolean }>({});
+  
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Função para converter arquivo para base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result as string;
+        resolve(result);
+      };
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  // Função para lidar com upload de áudio
+  const handleAudioUpload = async (blockId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validar tipo de arquivo
+    if (!file.type.startsWith('audio/')) {
+      toast({
+        title: "Erro",
+        description: "Por favor, selecione um arquivo de áudio válido.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validar tamanho (limite de 16MB)
+    const maxSize = 16 * 1024 * 1024; // 16MB
+    if (file.size > maxSize) {
+      toast({
+        title: "Erro",
+        description: "O arquivo de áudio deve ter no máximo 16MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Converter para base64
+      const base64 = await fileToBase64(file);
+      
+      // Atualizar o bloco com o arquivo
+      updateContentBlock(blockId, base64, {
+        audioFile: file,
+        audioBase64: base64,
+        filename: file.name
+      });
+
+      toast({
+        title: "Sucesso",
+        description: `Áudio "${file.name}" carregado com sucesso!`,
+      });
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Erro ao processar o arquivo de áudio.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const { data: messages, isLoading } = useQuery({
     queryKey: ["messages"],
@@ -268,6 +335,7 @@ export default function Messages() {
       case 'image': return <Image className="h-4 w-4" />;
       case 'file': return <FileText className="h-4 w-4" />;
       case 'link': return <Link className="h-4 w-4" />;
+      case 'audio': return <Volume2 className="h-4 w-4" />;
       default: return <Type className="h-4 w-4" />;
     }
   };
@@ -278,6 +346,7 @@ export default function Messages() {
       case 'image': return 'Imagem';
       case 'file': return 'Arquivo';
       case 'link': return 'Link';
+      case 'audio': return 'Áudio';
       default: return 'Texto';
     }
   };
@@ -337,9 +406,9 @@ export default function Messages() {
     const lastCloseBrace = beforeCursor.lastIndexOf('}}');
     
     if (lastOpenBrace > lastCloseBrace && lastOpenBrace !== -1) {
-      setActiveTextarea(blockId);
+      setActiveTextareaId(blockId);
     } else {
-      setActiveTextarea(null);
+      setActiveTextareaId(null);
     }
   };
 
@@ -402,29 +471,26 @@ export default function Messages() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => addContentBlock('file')}
-                  >
-                    <FileText className="mr-2 h-4 w-4" />
-                    Arquivo
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => addContentBlock('link')}
-                  >
-                    <Link className="mr-2 h-4 w-4" />
-                    Link
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
                     onClick={() => addContentBlock('audio')}
                   >
                     <Volume2 className="mr-2 h-4 w-4" />
                     Áudio
                   </Button>
+                  <div className="relative">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled
+                      className="opacity-50 cursor-not-allowed"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      Arquivo
+                    </Button>
+                    <Badge variant="secondary" className="absolute -top-2 -right-2 text-xs px-1 py-0">
+                      Em breve
+                    </Badge>
+                  </div>
                 </div>
               </div>
 
@@ -626,16 +692,69 @@ export default function Messages() {
                         )}
 
                         {block.type === 'audio' && (
-                          <div className="space-y-2">
+                          <div className="space-y-3">
+                            <div className="space-y-2">
+                              <Label>Arquivo de Áudio</Label>
+                              <div className="flex gap-2">
+                                <Input
+                                  type="file"
+                                  accept="audio/*"
+                                  onChange={(e) => handleAudioUpload(block.id, e)}
+                                  className="flex-1"
+                                />
+                                {block.metadata?.audioFile && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setAudioPreview(prev => ({ ...prev, [block.id]: !prev[block.id] }))}
+                                  >
+                                    {audioPreview[block.id] ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                                    {audioPreview[block.id] ? 'Pausar' : 'Preview'}
+                                  </Button>
+                                )}
+                              </div>
+                              {block.metadata?.audioFile && (
+                                <div className="text-sm text-muted-foreground bg-gray-50 p-2 rounded">
+                                  <div className="flex items-center gap-2">
+                                    <Volume2 className="h-4 w-4" />
+                                    <span>📁 {block.metadata.audioFile.name}</span>
+                                    <span className="text-xs">({(block.metadata.audioFile.size / 1024 / 1024).toFixed(2)} MB)</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Preview do áudio */}
+                            {audioPreview[block.id] && block.metadata?.audioBase64 && (
+                              <div className="bg-gray-50 p-3 rounded border">
+                                <Label className="text-sm font-medium">Preview do Áudio</Label>
+                                <audio 
+                                  controls 
+                                  className="w-full mt-2"
+                                  src={block.metadata.audioBase64}
+                                >
+                                  Seu navegador não suporta o elemento de áudio.
+                                </audio>
+                              </div>
+                            )}
+                            
+                            {/* Fallback para URL (caso não tenha upload) */}
+                            {!block.metadata?.audioFile && (
+                              <div className="space-y-2">
+                                <Label>Ou URL do áudio</Label>
+                                <Input
+                                  placeholder="https://exemplo.com/audio.mp3"
+                                  value={block.content}
+                                  onChange={(e) => updateContentBlock(block.id, e.target.value)}
+                                />
+                              </div>
+                            )}
+                            
                             <Input
                               placeholder="Descrição do áudio (opcional)"
-                              value={block.content}
-                              onChange={(e) => updateContentBlock(block.id, e.target.value)}
-                            />
-                            <Input
-                              placeholder="URL do áudio (opcional)"
-                              value={block.metadata?.url || ''}
-                              onChange={(e) => updateContentBlock(block.id, block.content, { url: e.target.value })}
+                              value={block.metadata?.alt || ''}
+                              onChange={(e) => updateContentBlock(block.id, block.content, { alt: e.target.value })}
                             />
                           </div>
                         )}
@@ -750,19 +869,48 @@ export default function Messages() {
                         </div>
                         
                         {isFlow ? (
-                          <div className="space-y-2">
-                            {flowContent.map((block, index) => (
-                              <div key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
-                                {getContentTypeIcon(block.type)}
-                                <span>{getContentTypeLabel(block.type)}:</span>
-                                <span className="truncate max-w-xs">
-                                  {block.type === 'text' 
-                                    ? block.content.substring(0, 50) + (block.content.length > 50 ? '...' : '')
-                                    : block.content || block.metadata?.filename || 'Sem conteúdo'
-                                  }
-                                </span>
-                              </div>
-                            ))}
+                          <div className="space-y-3">
+                            {/* Fluxo Visual */}
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {flowContent.map((block, index) => (
+                                <div key={index} className="flex items-center gap-1">
+                                  {/* Bloco visual */}
+                                  <div className="flex items-center justify-center w-10 h-10 rounded-lg border-2 border-primary/30 bg-primary/10 shadow-sm">
+                                    {getContentTypeIcon(block.type)}
+                                  </div>
+                                  
+                                  {/* Conector com seta (exceto no último item) */}
+                                  {index < flowContent.length - 1 && (
+                                    <div className="flex items-center mx-1">
+                                      <div className="w-6 h-0.5 bg-primary/40"></div>
+                                      <div className="w-0 h-0 border-l-2 border-l-primary/40 border-t-2 border-t-transparent border-b-2 border-b-transparent ml-0.5"></div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            
+                            {/* Preview do conteúdo */}
+                            <div className="space-y-1">
+                              {flowContent.slice(0, 2).map((block, index) => (
+                                <div key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <div className="flex items-center justify-center w-6 h-6 rounded border border-primary/20 bg-primary/5">
+                                    {getContentTypeIcon(block.type)}
+                                  </div>
+                                  <span className="truncate max-w-xs">
+                                    {block.type === 'text' 
+                                      ? block.content.substring(0, 40) + (block.content.length > 40 ? '...' : '')
+                                      : block.content || block.metadata?.filename || 'Sem conteúdo'
+                                    }
+                                  </span>
+                                </div>
+                              ))}
+                              {flowContent.length > 2 && (
+                                <div className="text-xs text-muted-foreground ml-8">
+                                  +{flowContent.length - 2} bloco{flowContent.length - 2 !== 1 ? 's' : ''} adicional{flowContent.length - 2 !== 1 ? 'is' : ''}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         ) : (
                       <p className="text-sm text-muted-foreground whitespace-pre-wrap">

@@ -145,6 +145,194 @@ export type Database = {
         }
         Relationships: []
       }
+      recovery_rules: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          trigger_text: string
+          trigger_type: string
+          is_active: boolean
+          timeout_minutes: number
+          max_attempts: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          description?: string | null
+          trigger_text: string
+          trigger_type?: string
+          is_active?: boolean
+          timeout_minutes?: number
+          max_attempts?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          trigger_text?: string
+          trigger_type?: string
+          is_active?: boolean
+          timeout_minutes?: number
+          max_attempts?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      recovery_flows: {
+        Row: {
+          id: string
+          rule_id: string
+          sequence_order: number
+          delay_minutes: number
+          message_id: string
+          webhook_url: string | null
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          rule_id: string
+          sequence_order: number
+          delay_minutes?: number
+          message_id: string
+          webhook_url?: string | null
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          rule_id?: string
+          sequence_order?: number
+          delay_minutes?: number
+          message_id?: string
+          webhook_url?: string | null
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recovery_flows_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "recovery_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recovery_flows_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      monitored_conversations: {
+        Row: {
+          id: string
+          contact_id: string
+          rule_id: string
+          trigger_message: string
+          trigger_received_at: string
+          current_flow_step: number
+          attempts_count: number
+          last_message_sent_at: string | null
+          next_message_scheduled_at: string | null
+          status: string
+          completed_at: string | null
+          error_message: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          contact_id: string
+          rule_id: string
+          trigger_message: string
+          trigger_received_at?: string
+          current_flow_step?: number
+          attempts_count?: number
+          last_message_sent_at?: string | null
+          next_message_scheduled_at?: string | null
+          status?: string
+          completed_at?: string | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          contact_id?: string
+          rule_id?: string
+          trigger_message?: string
+          trigger_received_at?: string
+          current_flow_step?: number
+          attempts_count?: number
+          last_message_sent_at?: string | null
+          next_message_scheduled_at?: string | null
+          status?: string
+          completed_at?: string | null
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monitored_conversations_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "monitored_conversations_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "recovery_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recovery_logs: {
+        Row: {
+          id: string
+          conversation_id: string
+          action: string
+          message: string | null
+          data: Record<string, any> | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          conversation_id: string
+          action: string
+          message?: string | null
+          data?: Record<string, any> | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          conversation_id?: string
+          action?: string
+          message?: string | null
+          data?: Record<string, any> | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recovery_logs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "monitored_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -120,84 +120,87 @@ async function sendMessageToContact(contact, message, campaign) {
   // Simular envio (remover em produção)
   await new Promise(resolve => setTimeout(resolve, 1000));
   
-  // Se a campanha tem webhook, chamar
+  // Se a campanha tem webhook, chamar no formato n8n
   if (campaign.webhook_url) {
     try {
-      // Formato Evolution API - MESSAGES_UPSERT com TODOS os dados
-      const webhookPayload = {
-        event: "MESSAGES_UPSERT",
-        instance: "message-flow-wiz",
-        data: {
-          key: {
-            remoteJid: contact.phone.replace(/\D/g, '') + "@s.whatsapp.net",
-            fromMe: true,
-            id: `3EB0${Date.now()}${Math.random().toString(36).substr(2, 9)}`
-          },
-          message: {
-            conversation: message.content
-          },
-          messageTimestamp: Math.floor(Date.now() / 1000),
-          status: "PENDING",
-          participant: contact.phone.replace(/\D/g, '') + "@s.whatsapp.net",
-          pushName: contact.name,
-          messageType: "conversation"
-        },
-        destination: contact.phone.replace(/\D/g, '') + "@s.whatsapp.net",
-        date_time: new Date().toISOString(),
-        // DADOS COMPLETOS DO CONTATO
-        contact: {
-          id: contact.id,
-          name: contact.name,
-          phone: contact.phone,
-          phone2: contact.phone2 || null,
-          phone3: contact.phone3 || null,
-          email: contact.email || null,
-          tags: contact.tags || [],
-          company: contact.company || null,
-          position: contact.position || null,
-          notes: contact.notes || null,
-          custom_fields: contact.custom_fields || {},
-          created_at: contact.created_at,
-          updated_at: contact.updated_at
-        },
-        // DADOS COMPLETOS DA MENSAGEM
-        message: {
-          id: message.id,
-          title: message.title,
-          content: message.content,
-          type: message.type || 'text',
-          media_url: message.media_url || null,
-          variables: message.variables || [],
-          created_at: message.created_at,
-          updated_at: message.updated_at
-        },
-        // DADOS COMPLETOS DA CAMPANHA
-        campaign: {
-          id: campaign.id,
-          name: campaign.name,
-          status: campaign.status,
-          scheduled_at: campaign.scheduled_at,
-          min_delay_between_clients: campaign.min_delay_between_clients,
-          max_delay_between_clients: campaign.max_delay_between_clients,
-          webhook_url: campaign.webhook_url,
-          created_at: campaign.created_at,
-          updated_at: campaign.updated_at
-        },
-        // METADADOS DO ENVIO
-        metadata: {
-          sent_at: new Date().toISOString(),
-          total_contacts: campaign.contact_ids?.length || 0
+      // Converter fluxo de mensagem para formato n8n
+      let n8nFlow = [];
+      
+      try {
+        // Tentar parsear como JSON (fluxo estruturado)
+        const flowContent = JSON.parse(message.content);
+        
+        if (Array.isArray(flowContent)) {
+          n8nFlow = flowContent.map((block, index) => {
+            // Mapear tipos do sistema para tipos n8n
+            let n8nType;
+            
+            switch (block.type) {
+              case 'text':
+                n8nType = 'text';
+                break;
+              case 'image':
+                n8nType = 'image';
+                break;
+              case 'file':
+                n8nType = 'document';
+                break;
+              case 'audio':
+                n8nType = 'audio';
+                break;
+              case 'link':
+                n8nType = 'text';
+                break;
+              default:
+                n8nType = 'text';
+            }
+
+            return {
+              type: n8nType,
+              content: block.type === 'audio' ? block.content : block.content, // Para áudio, usar content (URL)
+              caption: block.metadata?.alt || block.metadata?.filename || undefined,
+              delay: block.delay || (index === 0 ? 0 : 5)
+            };
+          });
         }
+      } catch (error) {
+        // Se não conseguir parsear como JSON, tratar como mensagem simples
+        n8nFlow = [{
+          type: 'text',
+          content: message.content,
+          delay: 0
+        }];
+      }
+
+      // Formatar número de telefone para n8n
+      const cleanPhone = contact.phone.replace(/\D/g, '');
+      let formattedPhone = cleanPhone;
+      
+      if (cleanPhone.length === 11 && cleanPhone.startsWith('11')) {
+        formattedPhone = '55' + cleanPhone;
+      } else if (cleanPhone.length >= 12) {
+        formattedPhone = cleanPhone;
+      } else if (cleanPhone.length === 10) {
+        formattedPhone = '55' + cleanPhone;
+      }
+
+      // Payload no formato n8n
+      const n8nPayload = {
+        session: 'message-flow-wiz',
+        number: formattedPhone,
+        flow: n8nFlow
       };
+
+      console.log(`Enviando webhook n8n para ${contact.name}:`, JSON.stringify(n8nPayload, null, 2));
 
       await fetch(campaign.webhook_url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(webhookPayload)
+        body: JSON.stringify(n8nPayload)
       });
-      console.log(`Webhook chamado para ${contact.name}`);
+      console.log(`Webhook n8n chamado para ${contact.name}`);
     } catch (webhookError) {
-      console.warn(`Erro ao chamar webhook para ${contact.name}:`, webhookError);
+      console.warn(`Erro ao chamar webhook n8n para ${contact.name}:`, webhookError);
     }
   }
 }

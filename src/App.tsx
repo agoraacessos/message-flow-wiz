@@ -7,15 +7,20 @@ import Dashboard from "./pages/Dashboard";
 import Contacts from "./pages/Contacts";
 import Messages from "./pages/Messages";
 import Campaigns from "./pages/Campaigns";
+import ConversationRecovery from "./pages/ConversationRecovery";
 import FieldSettings from "./pages/FieldSettings";
 import NotFound from "./pages/NotFound";
 import { useSupabaseSync } from "./hooks/useSupabaseSync";
+import { useConversationRecoveryMonitor } from "./hooks/useConversationRecoveryMonitor";
 
 const queryClient = new QueryClient();
 
 const App = () => {
   // Sincronização automática com Supabase
   useSupabaseSync();
+  
+  // Monitor de recuperação de conversas
+  useConversationRecoveryMonitor();
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -28,6 +33,7 @@ const App = () => {
             <Route path="/contacts" element={<Contacts />} />
             <Route path="/messages" element={<Messages />} />
             <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/conversation-recovery" element={<ConversationRecovery />} />
             <Route path="/field-settings" element={<FieldSettings />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

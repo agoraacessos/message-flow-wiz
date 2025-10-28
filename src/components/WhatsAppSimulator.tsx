@@ -13,6 +13,8 @@ interface MessageContent {
     filename?: string;
     url?: string;
     alt?: string;
+    audioFile?: File;
+    audioBase64?: string;
   };
 }
 
@@ -131,14 +133,23 @@ export function WhatsAppSimulator({ messageFlow, title }: WhatsAppSimulatorProps
             </div>
             <div className="flex-1">
               <p className="text-sm font-medium">Áudio</p>
-              <p className="text-xs text-gray-500">{block.content || 'Mensagem de voz'}</p>
-              {block.url && (
-                <p className="text-xs text-blue-500 mt-1 truncate">{block.url}</p>
+              <p className="text-xs text-gray-500">
+                {block.metadata?.audioFile?.name || block.metadata?.filename || 'Mensagem de voz'}
+              </p>
+              {block.metadata?.audioFile && (
+                <p className="text-xs text-gray-400">
+                  {(block.metadata.audioFile.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              )}
+              {!block.metadata?.audioFile && block.content && !block.content.startsWith('data:') && (
+                <p className="text-xs text-blue-500 mt-1 truncate">{block.content}</p>
               )}
             </div>
             <div className="flex items-center space-x-2">
               <div className="w-8 h-1 bg-gray-300 rounded-full"></div>
-              <span className="text-xs text-gray-500">0:15</span>
+              <span className="text-xs text-gray-500">
+                {block.metadata?.audioFile ? '0:00' : '0:15'}
+              </span>
             </div>
           </div>
         );

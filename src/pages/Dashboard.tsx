@@ -1,32 +1,124 @@
 import { Layout } from "@/components/Layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, MessageSquare, Send, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Users, MessageSquare, Send, CheckCircle2, Calendar, Target } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 
 export default function Dashboard() {
   const { data: stats } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: async () => {
+      console.log("🔍 Buscando dados do Dashboard...");
+      
       const [contactsResult, messagesResult, campaignsResult, logsResult] = await Promise.all([
         supabase.from("contacts").select("id", { count: "exact", head: true }),
         supabase.from("messages").select("id", { count: "exact", head: true }),
-        supabase.from("campaigns").select("id", { count: "exact", head: true }),
-        supabase.from("campaign_logs").select("status", { count: "exact" }),
+        supabase.from("campaigns").select("id, status, created_at, contact_ids", { count: "exact" }),
+        supabase.from("campaign_logs").select("status, contact_id, created_at", { count: "exact" }),
       ]);
 
-      const sentCount = logsResult.data?.filter((log) => log.status === "sent").length || 0;
-      const errorCount = logsResult.data?.filter((log) => log.status === "error").length || 0;
-      const pendingCount = logsResult.data?.filter((log) => log.status === "pending").length || 0;
+      console.log("📊 Resultados das queries:", {
+        contacts: contactsResult.count,
+        messages: messagesResult.count,
+        campaigns: campaignsResult.data?.length,
+        logs: logsResult.data?.length
+      });
 
-      return {
+      // Calcular estatísticas das campanhas
+      const campaigns = campaignsResult.data || [];
+      const completedCampaigns = campaigns.filter(c => c.status === 'sent').length;
+      const scheduledCampaigns = campaigns.filter(c => c.status === 'pending').length;
+      const runningCampaigns = campaigns.filter(c => c.status === 'sending').length;
+      
+      console.log("📈 Estatísticas das campanhas:", {
+        total: campaigns.length,
+        completed: completedCampaigns,
+        scheduled: scheduledCampaigns,
+        running: runningCampaigns
+      });
+      
+      // Calcular estatísticas dos logs
+      const logs = logsResult.data || [];
+      const sentCount = logs.filter(log => log.status === "sent").length;
+      const uniqueContactsReached = new Set(logs.filter(log => log.status === "sent").map(log => log.contact_id)).size;
+
+      // Se não há logs, calcular contatos impactados baseado nas campanhas enviadas
+      let contactsReached = uniqueContactsReached;
+      let flowsSent = sentCount;
+      
+      if (logs.length === 0) {
+        // Usar campanhas enviadas como proxy para fluxos enviados
+        flowsSent = campaigns.filter(c => c.status === 'sent').length;
+        
+        // Calcular total de contatos impactados (não únicos)
+        const sentCampaigns = campaigns.filter(c => c.status === 'sent');
+        let totalContactsImpacted = 0;
+        
+        for (const campaign of sentCampaigns) {
+          if (campaign.contact_ids && Array.isArray(campaign.contact_ids)) {
+            totalContactsImpacted += campaign.contact_ids.length;
+          }
+        }
+        
+        contactsReached = totalContactsImpacted;
+        
+        console.log("📋 Contatos impactados calculados:", {
+          sentCampaigns: sentCampaigns.length,
+          totalContactsImpacted: totalContactsImpacted
+        });
+      }
+
+      console.log("📤 Estatísticas dos logs:", {
+        total: logs.length,
+        sent: sentCount,
+        uniqueContactsReached: uniqueContactsReached,
+        contactsReached: contactsReached
+      });
+
+      // Criar dados históricos reais baseados nas datas de criação
+      const now = new Date();
+      const last6Months = Array.from({ length: 6 }, (_, i) => {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const monthName = date.toLocaleDateString('pt-BR', { month: 'short' });
+        
+        // Contar campanhas criadas neste mês
+        const campaignsThisMonth = campaigns.filter(c => {
+          const campaignDate = new Date(c.created_at);
+          return campaignDate.getMonth() === date.getMonth() && 
+                 campaignDate.getFullYear() === date.getFullYear();
+        }).length;
+        
+        // Contar contatos atingidos neste mês
+        const contactsThisMonth = logs.filter(log => {
+          const logDate = new Date(log.created_at);
+          return log.status === "sent" && 
+                 logDate.getMonth() === date.getMonth() && 
+                 logDate.getFullYear() === date.getFullYear();
+        }).length;
+        
+        return {
+          name: monthName,
+          campanhas: campaignsThisMonth,
+          contatos: contactsThisMonth
+        };
+      }).reverse();
+
+      console.log("📅 Dados históricos:", last6Months);
+
+      const result = {
         contacts: contactsResult.count || 0,
         messages: messagesResult.count || 0,
-        campaigns: campaignsResult.count || 0,
-        sent: sentCount,
-        errors: errorCount,
-        pending: pendingCount,
+        completedCampaigns,
+        scheduledCampaigns,
+        runningCampaigns,
+        sentCount: flowsSent,
+        contactsReached: contactsReached,
+        historicalData: last6Months,
       };
+
+      console.log("✅ Resultado final:", result);
+      return result;
     },
   });
 
@@ -36,44 +128,55 @@ export default function Dashboard() {
       value: stats?.contacts || 0,
       icon: Users,
       description: "Contatos cadastrados",
-      color: "text-primary",
+      color: "text-blue-600",
     },
     {
-      title: "Mensagens Criadas",
+      title: "Fluxos Criados",
       value: stats?.messages || 0,
       icon: MessageSquare,
       description: "Templates disponíveis",
-      color: "text-secondary",
+      color: "text-green-600",
     },
     {
-      title: "Campanhas Ativas",
-      value: stats?.campaigns || 0,
+      title: "Fluxos Enviados",
+      value: stats?.sentCount || 0,
       icon: Send,
-      description: "Campanhas configuradas",
-      color: "text-chart-4",
+      description: "Mensagens enviadas",
+      color: "text-purple-600",
     },
     {
-      title: "Mensagens Enviadas",
-      value: stats?.sent || 0,
+      title: "Campanhas Realizadas",
+      value: stats?.completedCampaigns || 0,
       icon: CheckCircle2,
-      description: "Disparos bem-sucedidos",
-      color: "text-primary",
+      description: "Campanhas finalizadas",
+      color: "text-emerald-600",
     },
     {
-      title: "Pendentes",
-      value: stats?.pending || 0,
-      icon: Clock,
-      description: "Aguardando envio",
-      color: "text-chart-4",
+      title: "Campanhas Programadas",
+      value: stats?.scheduledCampaigns || 0,
+      icon: Calendar,
+      description: "Campanhas agendadas",
+      color: "text-orange-600",
     },
     {
-      title: "Erros",
-      value: stats?.errors || 0,
-      icon: XCircle,
-      description: "Falhas no envio",
-      color: "text-destructive",
+      title: "Contatos Impactados",
+      value: stats?.contactsReached || 0,
+      icon: Target,
+      description: "Total de contatos impactados",
+      color: "text-red-600",
     },
   ];
+
+  // Dados reais para os gráficos
+  const chartData = stats?.historicalData || [];
+  
+  const pieData = [
+    { name: 'Campanhas Realizadas', value: stats?.completedCampaigns || 0, color: '#10b981' },
+    { name: 'Campanhas Programadas', value: stats?.scheduledCampaigns || 0, color: '#f59e0b' },
+    { name: 'Campanhas em Execução', value: stats?.runningCampaigns || 0, color: '#3b82f6' },
+  ].filter(item => item.value > 0); // Só mostrar categorias com dados
+
+  const COLORS = ['#10b981', '#f59e0b', '#3b82f6'];
 
   return (
     <Layout>
@@ -99,6 +202,123 @@ export default function Dashboard() {
             </Card>
           ))}
         </div>
+
+        {/* Seção de Gráficos */}
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Gráfico de Barras - Desempenho Mensal */}
+          <Card className="shadow-[var(--shadow-elegant)]">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                📊 Desempenho Mensal
+              </CardTitle>
+              <CardDescription>
+                Campanhas realizadas e contatos atingidos por mês
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="campanhas" fill="#3b82f6" name="Campanhas" />
+                    <Bar dataKey="contatos" fill="#10b981" name="Contatos Atingidos" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  <div className="text-center">
+                    <p className="text-lg font-medium">Nenhum dado disponível</p>
+                    <p className="text-sm">Crie campanhas para ver o desempenho mensal</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Gráfico de Pizza - Status das Campanhas */}
+          <Card className="shadow-[var(--shadow-elegant)]">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                🎯 Status das Campanhas
+              </CardTitle>
+              <CardDescription>
+                Distribuição por status atual
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {pieData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                  <div className="text-center">
+                    <p className="text-lg font-medium">Nenhuma campanha encontrada</p>
+                    <p className="text-sm">Crie campanhas para ver a distribuição por status</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Gráfico de Linha - Crescimento */}
+        <Card className="shadow-[var(--shadow-elegant)]">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              📈 Crescimento de Contatos
+            </CardTitle>
+            <CardDescription>
+              Evolução do número de contatos atingidos ao longo do tempo
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line 
+                    type="monotone" 
+                    dataKey="contatos" 
+                    stroke="#10b981" 
+                    strokeWidth={3}
+                    dot={{ fill: '#10b981', strokeWidth: 2, r: 6 }}
+                    name="Contatos Atingidos"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                <div className="text-center">
+                  <p className="text-lg font-medium">Nenhum dado disponível</p>
+                  <p className="text-sm">Crie campanhas para ver o crescimento de contatos</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card className="shadow-[var(--shadow-elegant)]">
           <CardHeader>

@@ -5,23 +5,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Send, Clock, CheckCircle2, XCircle, Plus, Search, Filter, Users, Calendar, Building, Edit, Trash2, TestTube } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Send, Clock, CheckCircle2, XCircle, Plus, Search, Filter, Users, Calendar, Building, Edit, Trash2, TestTube, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { CampaignStatus } from "@/components/CampaignStatus";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useCampaignProcessor } from "@/hooks/useCampaignProcessor";
 import { WebhookConfig } from "@/components/WebhookConfig";
+import { CampaignDiagnostic } from "@/components/CampaignDiagnostic";
+import { useCampaignMonitor } from "@/hooks/useCampaignMonitor";
 
 export default function Campaigns() {
   const [name, setName] = useState("");
   const [messageId, setMessageId] = useState("");
-  const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [scheduledAt, setScheduledAt] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [minDelayBetweenClients, setMinDelayBetweenClients] = useState(5);
   const [maxDelayBetweenClients, setMaxDelayBetweenClients] = useState(15);
+  
+  // Estados para seleção de contatos
+  const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   
   // Estados para filtros de contatos
   const [contactSearchTerm, setContactSearchTerm] = useState("");
@@ -36,11 +41,20 @@ export default function Campaigns() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [campaignToDelete, setCampaignToDelete] = useState<string | null>(null);
   
+  // Estados para campanhas - filtros e paginação
+  const [campaignSearchTerm, setCampaignSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState<"scheduled" | "running" | "completed">("scheduled");
+  const [currentPage, setCurrentPage] = useState(1);
+  const campaignsPerPage = 10;
+  
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
   // Hook para processar campanhas imediatas automaticamente
-  useCampaignProcessor();
+  const { processImmediateCampaign } = useCampaignProcessor();
+  
+  // Hook para monitorar campanhas travadas automaticamente
+  useCampaignMonitor();
 
   // Função para testar webhook (usada pelo componente WebhookConfig)
   const handleTestWebhook = () => {
@@ -77,6 +91,71 @@ export default function Campaigns() {
     },
   });
 
+  // Lógica para filtrar e separar campanhas
+  const { scheduledCampaigns, runningCampaigns, completedCampaigns, filteredScheduledCampaigns, filteredRunningCampaigns, filteredCompletedCampaigns } = useMemo(() => {
+    if (!campaigns) {
+      return {
+        scheduledCampaigns: [],
+        runningCampaigns: [],
+        completedCampaigns: [],
+        filteredScheduledCampaigns: [],
+        filteredRunningCampaigns: [],
+        filteredCompletedCampaigns: []
+      };
+    }
+
+    // Separar campanhas por status
+    const scheduled = campaigns.filter(campaign => 
+      campaign.status === 'pending'
+    );
+    
+    const running = campaigns.filter(campaign => 
+      campaign.status === 'sending'
+    );
+    
+    const completed = campaigns.filter(campaign => 
+      campaign.status === 'sent' || campaign.status === 'error'
+    );
+
+    // Aplicar filtro de busca
+    const filterBySearch = (campaignList: any[]) => {
+      if (!campaignSearchTerm) return campaignList;
+      return campaignList.filter(campaign =>
+        campaign.name.toLowerCase().includes(campaignSearchTerm.toLowerCase()) ||
+        campaign.messages?.title.toLowerCase().includes(campaignSearchTerm.toLowerCase())
+      );
+    };
+
+    return {
+      scheduledCampaigns: scheduled,
+      runningCampaigns: running,
+      completedCampaigns: completed,
+      filteredScheduledCampaigns: filterBySearch(scheduled),
+      filteredRunningCampaigns: filterBySearch(running),
+      filteredCompletedCampaigns: filterBySearch(completed)
+    };
+  }, [campaigns, campaignSearchTerm]);
+
+  // Paginação
+  const getPaginatedCampaigns = (campaignList: any[]) => {
+    const startIndex = (currentPage - 1) * campaignsPerPage;
+    const endIndex = startIndex + campaignsPerPage;
+    return campaignList.slice(startIndex, endIndex);
+  };
+
+  const totalPages = Math.ceil(
+    activeTab === "scheduled" 
+      ? filteredScheduledCampaigns.length / campaignsPerPage
+      : activeTab === "running"
+      ? filteredRunningCampaigns.length / campaignsPerPage
+      : filteredCompletedCampaigns.length / campaignsPerPage
+  );
+
+  // Função para verificar se campanha pode ser editada/excluída
+  const canEditOrDelete = (campaign: any) => {
+    return campaign.status === 'pending';
+  };
+
   const createMutation = useMutation({
     mutationFn: async () => {
       console.log('Criando campanha com dados:', {
@@ -86,12 +165,36 @@ export default function Campaigns() {
         scheduledAt,
         webhookUrl
       });
+      
+      console.log('🔍 Debug scheduledAt:', {
+        scheduledAt,
+        type: typeof scheduledAt,
+        isEmpty: !scheduledAt,
+        length: scheduledAt?.length
+      });
+
+      // Converter horário local para UTC se scheduledAt estiver preenchido
+      let scheduledAtUTC = null;
+      if (scheduledAt) {
+        // scheduledAt vem no formato "YYYY-MM-DDTHH:MM" (horário local)
+        // Precisamos converter para UTC
+        const localDate = new Date(scheduledAt);
+        scheduledAtUTC = localDate.toISOString();
+        
+        console.log('🕐 Conversão de fuso horário:', {
+          input: scheduledAt,
+          localDate: localDate.toString(),
+          utcDate: scheduledAtUTC,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        });
+      }
 
       const campaign = {
         name,
         message_id: messageId,
         contact_ids: selectedContacts,
-        scheduled_at: scheduledAt || null,
+        contact_selection_mode: "contacts",
+        scheduled_at: scheduledAtUTC,
         webhook_url: webhookUrl || null,
         min_delay_between_clients: minDelayBetweenClients,
         max_delay_between_clients: maxDelayBetweenClients,
@@ -113,35 +216,8 @@ export default function Campaigns() {
 
       console.log('Campanha criada com sucesso:', data);
 
-      // Call webhook if provided
-      if (webhookUrl) {
-        try {
-          // Formato Evolution API - CONNECTION_UPDATE (campanha criada)
-          const webhookPayload = {
-            event: "CONNECTION_UPDATE",
-            instance: "message-flow-wiz",
-            data: {
-              state: "open",
-              statusReason: "campaign_created"
-            },
-            campaign: {
-              id: data.id,
-              name: data.name,
-              status: data.status,
-              created_at: data.created_at
-            },
-            date_time: new Date().toISOString()
-          };
-
-          await fetch(webhookUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(webhookPayload),
-          });
-        } catch (webhookError) {
-          console.warn('Erro ao chamar webhook:', webhookError);
-        }
-      }
+      // Webhook será enviado apenas durante o processamento da campanha
+      // Não enviamos webhook na criação, apenas no processamento
 
       return data;
     },
@@ -183,11 +259,24 @@ export default function Campaigns() {
     mutationFn: async () => {
       if (!editingCampaign) throw new Error("Campanha não encontrada");
       
+      // Converter horário local para UTC se scheduledAt estiver preenchido
+      let scheduledAtUTC = null;
+      if (scheduledAt) {
+        const localDate = new Date(scheduledAt);
+        scheduledAtUTC = localDate.toISOString();
+        
+        console.log('🕐 Conversão de fuso horário (update):', {
+          input: scheduledAt,
+          localDate: localDate.toString(),
+          utcDate: scheduledAtUTC
+        });
+      }
+
       const campaignData = {
         name,
         message_id: messageId,
         contact_ids: selectedContacts,
-        scheduled_at: scheduledAt || null,
+        scheduled_at: scheduledAtUTC,
         webhook_url: webhookUrl || null,
         min_delay_between_clients: minDelayBetweenClients,
         max_delay_between_clients: maxDelayBetweenClients,
@@ -204,7 +293,7 @@ export default function Campaigns() {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       setEditingCampaign(null);
       setIsEditDialogOpen(false);
-      resetForm();
+      resetFormForEdit();
       toast({
         title: "Sucesso!",
         description: "Campanha atualizada com sucesso.",
@@ -302,6 +391,15 @@ export default function Campaigns() {
   };
 
   const handleEditCampaign = (campaign: any) => {
+    if (!canEditOrDelete(campaign)) {
+      toast({
+        title: "Não é possível editar",
+        description: "Apenas campanhas pendentes podem ser editadas.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setEditingCampaign(campaign);
     setName(campaign.name);
     setMessageId(campaign.message_id);
@@ -316,12 +414,21 @@ export default function Campaigns() {
   const handleCancelEdit = () => {
     setEditingCampaign(null);
     setIsEditDialogOpen(false);
-    resetForm();
+    resetFormForEdit();
   };
 
-  const handleDeleteCampaign = (campaignId: string) => {
+  const handleDeleteCampaign = (campaign: any) => {
+    if (!canEditOrDelete(campaign)) {
+      toast({
+        title: "Não é possível excluir",
+        description: "Apenas campanhas pendentes podem ser excluídas.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (window.confirm("Tem certeza que deseja excluir esta campanha? Esta ação não pode ser desfeita.")) {
-      deleteMutation.mutate(campaignId);
+      deleteMutation.mutate(campaign.id);
     }
   };
 
@@ -330,6 +437,16 @@ export default function Campaigns() {
     setMessageId("");
     setSelectedContacts([]);
     setScheduledAt("");
+    setWebhookUrl("");
+    setMinDelayBetweenClients(5);
+    setMaxDelayBetweenClients(15);
+  };
+
+  const resetFormForEdit = () => {
+    setName("");
+    setMessageId("");
+    setSelectedContacts([]);
+    // Não limpar scheduledAt aqui - manter o valor atual
     setWebhookUrl("");
     setMinDelayBetweenClients(5);
     setMaxDelayBetweenClients(15);
@@ -465,6 +582,10 @@ export default function Campaigns() {
               <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
               <span>Processamento automático ativo</span>
             </div>
+            <div className="mt-2 flex items-center gap-2 text-xs text-blue-600">
+              <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse"></div>
+              <span>Monitor de campanhas ativo (verifica a cada 2 minutos)</span>
+            </div>
           </div>
           <div className="flex gap-2">
             <Button
@@ -496,6 +617,14 @@ export default function Campaigns() {
                       title: "Processando!",
                       description: `${campaigns.length} campanha(s) imediata(s) sendo processada(s).`,
                     });
+                    
+                    // Processar cada campanha manualmente
+                    for (const campaign of campaigns) {
+                      await processImmediateCampaign(campaign.id);
+                    }
+                    
+                    // Atualizar lista
+                    queryClient.invalidateQueries({ queryKey: ["campaigns"] });
                   } else {
                     toast({
                       title: "Nenhuma campanha pendente",
@@ -505,7 +634,7 @@ export default function Campaigns() {
                 } catch (error) {
                   toast({
                     title: "Erro",
-                    description: "Erro ao verificar campanhas pendentes.",
+                    description: "Erro ao processar campanhas pendentes.",
                     variant: "destructive",
                   });
                 }
@@ -563,6 +692,9 @@ export default function Campaigns() {
           </div>
         </div>
 
+        {/* Componente de Diagnóstico de Campanhas Travadas */}
+        <CampaignDiagnostic />
+
         <Card className="shadow-[var(--shadow-elegant)]">
           <CardHeader>
             <CardTitle>{editingCampaign ? 'Editar Campanha' : 'Nova Campanha'}</CardTitle>
@@ -601,7 +733,9 @@ export default function Campaigns() {
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label>Contatos ({selectedContacts.length} selecionados)</Label>
+                  <Label>
+                    Contatos ({selectedContacts.length} selecionados)
+                  </Label>
                   <div className="flex gap-2">
                     <Button
                       type="button"
@@ -625,162 +759,165 @@ export default function Campaigns() {
                   </div>
                 </div>
 
-                {/* Filtros de Contatos */}
-                <Card>
-                  <CardContent className="pt-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {/* Busca */}
-                      <div className="space-y-2">
-                        <Label htmlFor="contact-search">Buscar</Label>
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            id="contact-search"
-                            placeholder="Nome, telefone, email..."
-                            value={contactSearchTerm}
-                            onChange={(e) => setContactSearchTerm(e.target.value)}
-                            className="pl-10"
-                          />
-                        </div>
-                      </div>
+                {/* Seleção de Contatos */}
+                <>
+                    {/* Filtros de Contatos */}
+                    <Card>
+                      <CardContent className="pt-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {/* Busca */}
+                          <div className="space-y-2">
+                            <Label htmlFor="contact-search">Buscar</Label>
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                id="contact-search"
+                                placeholder="Nome, telefone, email..."
+                                value={contactSearchTerm}
+                                onChange={(e) => setContactSearchTerm(e.target.value)}
+                                className="pl-10"
+                              />
+                            </div>
+                          </div>
 
-                      {/* Filtro por Tag */}
-                      <div className="space-y-2">
-                        <Label htmlFor="contact-tag-filter">Filtrar por Tag</Label>
-                        <Select value={tagFilter} onValueChange={setTagFilter}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Todas as tags" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">Todas as tags</SelectItem>
-                            {allTags.map((tag) => (
-                              <SelectItem key={tag} value={tag}>
-                                {tag}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* Filtro por Empresa */}
-                      <div className="space-y-2">
-                        <Label htmlFor="contact-company-filter">Filtrar por Empresa</Label>
-                        <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Todas as empresas" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">Todas as empresas</SelectItem>
-                            {allCompanies.map((company) => (
-                              <SelectItem key={company} value={company}>
-                                {company}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* Filtro por Data */}
-                      <div className="space-y-2">
-                        <Label htmlFor="contact-date-filter">Filtrar por Data</Label>
-                        <Select value={dateFilter} onValueChange={setDateFilter}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Todas as datas" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">Todas as datas</SelectItem>
-                            <SelectItem value="today">Hoje</SelectItem>
-                            <SelectItem value="week">Última semana</SelectItem>
-                            <SelectItem value="month">Último mês</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* Ordenar por */}
-                      <div className="space-y-2">
-                        <Label htmlFor="contact-sort-by">Ordenar por</Label>
-                        <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="name">Nome</SelectItem>
-                            <SelectItem value="created_at">Data de Inclusão</SelectItem>
-                            <SelectItem value="company">Empresa</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      {/* Ordem */}
-                      <div className="space-y-2">
-                        <Label htmlFor="contact-sort-order">Ordem</Label>
-                        <Select value={sortOrder} onValueChange={(value: any) => setSortOrder(value)}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="asc">Crescente</SelectItem>
-                            <SelectItem value="desc">Decrescente</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Lista de Contatos Filtrados */}
-                <div className="max-h-64 overflow-y-auto rounded-lg border p-4 space-y-2">
-                  {filteredAndSortedContacts.length > 0 ? (
-                    filteredAndSortedContacts.map((contact) => (
-                      <label
-                        key={contact.id}
-                        className="flex items-center gap-3 cursor-pointer hover:bg-accent rounded p-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedContacts.includes(contact.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedContacts([...selectedContacts, contact.id]);
-                            } else {
-                              setSelectedContacts(selectedContacts.filter((id) => id !== contact.id));
-                            }
-                          }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">{contact.name}</span>
-                            {contact.tags && contact.tags.length > 0 && (
-                              <div className="flex gap-1">
-                                {contact.tags.slice(0, 2).map((tag: any) => (
-                                  <Badge key={tag} variant="secondary" className="text-xs">
+                          {/* Filtro por Tag */}
+                          <div className="space-y-2">
+                            <Label htmlFor="contact-tag-filter">Filtrar por Tag</Label>
+                            <Select value={tagFilter} onValueChange={setTagFilter}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Todas as tags" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Todas as tags</SelectItem>
+                                {allTags.map((tag) => (
+                                  <SelectItem key={tag} value={tag}>
                                     {tag}
-                                  </Badge>
+                                  </SelectItem>
                                 ))}
-                                {contact.tags.length > 2 && (
-                                  <Badge variant="outline" className="text-xs">
-                                    +{contact.tags.length - 2}
-                                  </Badge>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Filtro por Empresa */}
+                          <div className="space-y-2">
+                            <Label htmlFor="contact-company-filter">Filtrar por Empresa</Label>
+                            <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Todas as empresas" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Todas as empresas</SelectItem>
+                                {allCompanies.map((company) => (
+                                  <SelectItem key={company} value={company}>
+                                    {company}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Filtro por Data */}
+                          <div className="space-y-2">
+                            <Label htmlFor="contact-date-filter">Filtrar por Data</Label>
+                            <Select value={dateFilter} onValueChange={setDateFilter}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Todas as datas" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Todas as datas</SelectItem>
+                                <SelectItem value="today">Hoje</SelectItem>
+                                <SelectItem value="week">Última semana</SelectItem>
+                                <SelectItem value="month">Último mês</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Ordenar por */}
+                          <div className="space-y-2">
+                            <Label htmlFor="contact-sort-by">Ordenar por</Label>
+                            <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="name">Nome</SelectItem>
+                                <SelectItem value="created_at">Data de Inclusão</SelectItem>
+                                <SelectItem value="company">Empresa</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Ordem */}
+                          <div className="space-y-2">
+                            <Label htmlFor="contact-sort-order">Ordem</Label>
+                            <Select value={sortOrder} onValueChange={(value: any) => setSortOrder(value)}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="asc">Crescente</SelectItem>
+                                <SelectItem value="desc">Decrescente</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Lista de Contatos Filtrados */}
+                    <div className="max-h-64 overflow-y-auto rounded-lg border p-4 space-y-2">
+                      {filteredAndSortedContacts.length > 0 ? (
+                        filteredAndSortedContacts.map((contact) => (
+                          <label
+                            key={contact.id}
+                            className="flex items-center gap-3 cursor-pointer hover:bg-accent rounded p-2"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedContacts.includes(contact.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedContacts([...selectedContacts, contact.id]);
+                                } else {
+                                  setSelectedContacts(selectedContacts.filter((id) => id !== contact.id));
+                                }
+                              }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium">{contact.name}</span>
+                                {contact.tags && contact.tags.length > 0 && (
+                                  <div className="flex gap-1">
+                                    {contact.tags.slice(0, 2).map((tag: any) => (
+                                      <Badge key={tag} variant="secondary" className="text-xs">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                    {contact.tags.length > 2 && (
+                                      <Badge variant="outline" className="text-xs">
+                                        +{contact.tags.length - 2}
+                                      </Badge>
+                                    )}
+                                  </div>
                                 )}
                               </div>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {contact.phone}
-                            {contact.company && ` • ${contact.company}`}
-                            {contact.email && ` • ${contact.email}`}
-                          </div>
+                              <div className="text-xs text-muted-foreground">
+                                {contact.phone}
+                                {contact.company && ` • ${contact.company}`}
+                                {contact.email && ` • ${contact.email}`}
+                              </div>
+                            </div>
+                          </label>
+                        ))
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Users className="h-8 w-8 mx-auto mb-2" />
+                          <p>Nenhum contato encontrado com os filtros aplicados</p>
                         </div>
-                      </label>
-                    ))
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Users className="h-8 w-8 mx-auto mb-2" />
-                      <p>Nenhum contato encontrado com os filtros aplicados</p>
+                      )}
                     </div>
-                  )}
+                  </>
                 </div>
-              </div>
 
               <div className="space-y-2">
                 <Label htmlFor="scheduled">Agendar Envio (opcional)</Label>
@@ -867,75 +1004,366 @@ export default function Campaigns() {
 
         <Card className="shadow-[var(--shadow-elegant)]">
           <CardHeader>
-            <CardTitle>Campanhas Criadas ({campaigns?.length || 0})</CardTitle>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Campanhas</CardTitle>
+                <CardDescription>
+                  Total: {campaigns?.length || 0} • Agendadas: {scheduledCampaigns.length} • Em Execução: {runningCampaigns.length} • Finalizadas: {completedCampaigns.length}
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar campanhas..."
+                    value={campaignSearchTerm}
+                    onChange={(e) => {
+                      setCampaignSearchTerm(e.target.value);
+                      setCurrentPage(1); // Reset para primeira página ao buscar
+                    }}
+                    className="pl-10 w-64"
+                  />
+                </div>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              <p className="text-center text-muted-foreground">Carregando...</p>
-            ) : campaigns && campaigns.length > 0 ? (
-              <div className="space-y-4">
-                {campaigns.map((campaign) => (
-                  <div
-                    key={campaign.id}
-                    className="flex items-start gap-4 rounded-lg border bg-card p-4 shadow-sm"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                      <Send className="h-5 w-5 text-primary" />
+            <Tabs value={activeTab} onValueChange={(value) => {
+              setActiveTab(value as "scheduled" | "running" | "completed");
+              setCurrentPage(1); // Reset para primeira página ao trocar aba
+            }}>
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="scheduled" className="flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Agendadas ({filteredScheduledCampaigns.length})
+                </TabsTrigger>
+                <TabsTrigger value="running" className="flex items-center gap-2">
+                  <Send className="h-4 w-4" />
+                  Em Execução ({filteredRunningCampaigns.length})
+                </TabsTrigger>
+                <TabsTrigger value="completed" className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Finalizadas ({filteredCompletedCampaigns.length})
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="scheduled" className="mt-6">
+                {isLoading ? (
+                  <p className="text-center text-muted-foreground">Carregando...</p>
+                ) : filteredScheduledCampaigns.length > 0 ? (
+                  <>
+                    <div className="space-y-4">
+                      {getPaginatedCampaigns(filteredScheduledCampaigns).map((campaign) => (
+                        <div
+                          key={campaign.id}
+                          className="flex items-start gap-4 rounded-lg border bg-card p-4 shadow-sm"
+                        >
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                            <Send className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-foreground">{campaign.name}</h3>
+                              <CampaignStatus 
+                                status={campaign.status || "pending"}
+                                sentAt={campaign.sent_at}
+                                errorMessage={campaign.error_message}
+                                scheduledAt={campaign.scheduled_at}
+                              />
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Mensagem: {campaign.messages?.title}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              Contatos: {campaign.contact_ids?.length || 0}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Delay desde início: {campaign.min_delay_between_clients || 5}s - {campaign.max_delay_between_clients || 15}s
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Criado em {new Date(campaign.created_at).toLocaleDateString("pt-BR")}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {campaign.status === 'pending' && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => processImmediateCampaign(campaign.id)}
+                                title="Processar campanha agora"
+                              >
+                                <Send className="h-4 w-4 text-green-600" />
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEditCampaign(campaign)}
+                              title={canEditOrDelete(campaign) ? "Editar campanha" : "Campanha não pode ser editada"}
+                              disabled={!canEditOrDelete(campaign)}
+                            >
+                              <Edit className="h-4 w-4 text-blue-600" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteCampaign(campaign)}
+                              disabled={deleteMutation.isPending || !canEditOrDelete(campaign)}
+                              title={canEditOrDelete(campaign) ? "Excluir campanha" : "Campanha não pode ser excluída"}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-foreground">{campaign.name}</h3>
-                        <CampaignStatus 
-                          status={campaign.status || "pending"}
-                          sentAt={campaign.sent_at}
-                          errorMessage={campaign.error_message}
-                          scheduledAt={campaign.scheduled_at}
-                        />
+                    
+                    {/* Paginação */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-6">
+                        <p className="text-sm text-muted-foreground">
+                          Mostrando {((currentPage - 1) * campaignsPerPage) + 1} a {Math.min(currentPage * campaignsPerPage, filteredScheduledCampaigns.length)} de {filteredScheduledCampaigns.length} campanhas
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                            disabled={currentPage === 1}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                            Anterior
+                          </Button>
+                          <span className="text-sm text-muted-foreground">
+                            Página {currentPage} de {totalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                            disabled={currentPage === totalPages}
+                          >
+                            Próxima
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        Mensagem: {campaign.messages?.title}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Contatos: {campaign.contact_ids?.length || 0}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Delay desde início: {campaign.min_delay_between_clients || 5}s - {campaign.max_delay_between_clients || 15}s
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Criado em {new Date(campaign.created_at).toLocaleDateString("pt-BR")}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEditCampaign(campaign)}
-                        title="Editar campanha"
-                      >
-                        <Edit className="h-4 w-4 text-blue-600" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteCampaign(campaign.id)}
-                        disabled={deleteMutation.isPending}
-                        title="Excluir campanha"
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Clock className="mb-4 h-12 w-12 text-muted-foreground" />
+                    <h3 className="text-lg font-semibold">Nenhuma campanha agendada</h3>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {campaignSearchTerm ? "Nenhuma campanha agendada encontrada com esse filtro" : "Crie sua primeira campanha para começar"}
+                    </p>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Send className="mb-4 h-12 w-12 text-muted-foreground" />
-                <h3 className="text-lg font-semibold">Nenhuma campanha criada</h3>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Crie sua primeira campanha para começar
-                </p>
-              </div>
-            )}
+                )}
+              </TabsContent>
+              
+              <TabsContent value="running" className="mt-6">
+                {isLoading ? (
+                  <p className="text-center text-muted-foreground">Carregando...</p>
+                ) : filteredRunningCampaigns.length > 0 ? (
+                  <>
+                    <div className="space-y-4">
+                      {getPaginatedCampaigns(filteredRunningCampaigns).map((campaign) => (
+                        <div
+                          key={campaign.id}
+                          className="flex items-start gap-4 rounded-lg border bg-card p-4 shadow-sm"
+                        >
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                            <Send className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-foreground">{campaign.name}</h3>
+                              <CampaignStatus 
+                                status={campaign.status || "pending"}
+                                sentAt={campaign.sent_at}
+                                errorMessage={campaign.error_message}
+                                scheduledAt={campaign.scheduled_at}
+                              />
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Mensagem: {campaign.messages?.title}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              Contatos: {campaign.contact_ids?.length || 0}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Delay desde início: {campaign.min_delay_between_clients || 5}s - {campaign.max_delay_between_clients || 15}s
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Criado em {new Date(campaign.created_at).toLocaleDateString("pt-BR")}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Campanha em execução"
+                              disabled
+                            >
+                              <Send className="h-4 w-4 text-orange-600" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Campanha não pode ser editada durante execução"
+                              disabled
+                            >
+                              <Edit className="h-4 w-4 text-gray-400" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Campanha não pode ser excluída durante execução"
+                              disabled
+                            >
+                              <Trash2 className="h-4 w-4 text-gray-400" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* Paginação */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-6">
+                        <p className="text-sm text-muted-foreground">
+                          Mostrando {((currentPage - 1) * campaignsPerPage) + 1} a {Math.min(currentPage * campaignsPerPage, filteredRunningCampaigns.length)} de {filteredRunningCampaigns.length} campanhas
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                            disabled={currentPage === 1}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                            Anterior
+                          </Button>
+                          <span className="text-sm text-muted-foreground">
+                            Página {currentPage} de {totalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                            disabled={currentPage === totalPages}
+                          >
+                            Próxima
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Send className="mb-4 h-12 w-12 text-muted-foreground" />
+                    <h3 className="text-lg font-semibold">Nenhuma campanha em execução</h3>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {campaignSearchTerm ? "Nenhuma campanha em execução encontrada com esse filtro" : "Campanhas em execução aparecerão aqui"}
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
+              
+              <TabsContent value="completed" className="mt-6">
+                {isLoading ? (
+                  <p className="text-center text-muted-foreground">Carregando...</p>
+                ) : filteredCompletedCampaigns.length > 0 ? (
+                  <>
+                    <div className="space-y-4">
+                      {getPaginatedCampaigns(filteredCompletedCampaigns).map((campaign) => (
+                        <div
+                          key={campaign.id}
+                          className="flex items-start gap-4 rounded-lg border bg-card p-4 shadow-sm"
+                        >
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                            <CheckCircle2 className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-foreground">{campaign.name}</h3>
+                              <CampaignStatus 
+                                status={campaign.status || "pending"}
+                                sentAt={campaign.sent_at}
+                                errorMessage={campaign.error_message}
+                                scheduledAt={campaign.scheduled_at}
+                              />
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Mensagem: {campaign.messages?.title}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              Contatos: {campaign.contact_ids?.length || 0}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Delay desde início: {campaign.min_delay_between_clients || 5}s - {campaign.max_delay_between_clients || 15}s
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Criado em {new Date(campaign.created_at).toLocaleDateString("pt-BR")}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Visualizar campanha finalizada"
+                            >
+                              <Eye className="h-4 w-4 text-gray-600" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* Paginação */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-6">
+                        <p className="text-sm text-muted-foreground">
+                          Mostrando {((currentPage - 1) * campaignsPerPage) + 1} a {Math.min(currentPage * campaignsPerPage, filteredCompletedCampaigns.length)} de {filteredCompletedCampaigns.length} campanhas
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                            disabled={currentPage === 1}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                            Anterior
+                          </Button>
+                          <span className="text-sm text-muted-foreground">
+                            Página {currentPage} de {totalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                            disabled={currentPage === totalPages}
+                          >
+                            Próxima
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <CheckCircle2 className="mb-4 h-12 w-12 text-muted-foreground" />
+                    <h3 className="text-lg font-semibold">Nenhuma campanha finalizada</h3>
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {campaignSearchTerm ? "Nenhuma campanha finalizada encontrada com esse filtro" : "Campanhas finalizadas aparecerão aqui"}
+                    </p>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>

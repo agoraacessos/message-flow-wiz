@@ -24,6 +24,17 @@ export function useSupabaseSync() {
     // Verificar se Supabase está conectado
     const checkSupabaseConnection = async () => {
       try {
+        // Verificar se as variáveis de ambiente estão configuradas
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        
+        if (!supabaseUrl || !supabaseKey || 
+            supabaseUrl === 'https://placeholder.supabase.co' || 
+            supabaseKey === 'placeholder-key') {
+          console.warn('⚠️ Supabase não configurado. Configure as variáveis de ambiente VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY');
+          return false;
+        }
+
         // Tentar fazer uma query simples para verificar conexão
         const { data, error } = await supabase
           .from('system_settings')
